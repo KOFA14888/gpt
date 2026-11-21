@@ -107,6 +107,15 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaisesRegex(ProviderError, "Неверный API-ключ"):
                 ask_stream(cfg, "вопрос", None)
 
+    def test_utf8_sse_decoded_correctly(self):
+        cfg = SimpleNamespace(
+            provider="openrouter", api_key="sk-test", model="m:free",
+            system_prompt="sys", attach_screenshot=True,
+        )
+        with patch("desktop_ai.providers.requests.post", return_value=Utf8SseResponse()):
+            answer = ask_stream(cfg, "вопрос", None)
+        self.assertEqual(answer, "Я вижу экран")
+
     def test_model_catalogue_fallback(self):
         with patch("desktop_ai.providers.requests.get", side_effect=OSError("offline")):
             models = list_models("openrouter", force=True)
@@ -116,6 +125,13 @@ class ProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Utf8SseResponse(FakeResponse):
+    def iter_lines(self, decode_unicode=True):
+        # Simulates a provider that sends raw UTF-8 without a charset header.
+        yield 'data: {"choices":[{"delta":{"content":"Я вижу экран"}}]}'.encode("utf-8")
+        yield b"data: [DONE]"
 
 
 class WorkerTests(unittest.TestCase):

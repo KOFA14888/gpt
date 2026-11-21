@@ -226,15 +226,20 @@ def ask_stream(
         stream=True,
         timeout=(10, 90),
     )
+    # SSE is UTF-8 by spec. requests may otherwise decode it as Latin-1 when
+    # the provider omits charset — that produces "Ð" instead of Cyrillic.
+    response.encoding = "utf-8"
     if response.status_code != 200:
         body = response.text[:2000]
         response.close()
         raise ProviderError(_http_error(response.status_code, body))
 
     try:
-        for line in response.iter_lines(decode_unicode=True):
-            if isinstance(line, bytes):
-                line = line.decode("utf-8", "replace")
+        for raw_line in response.iter_lines(decode_unicode=False):
+            if isinstance(raw_line, bytes):
+                line = raw_line.decode("utf-8", "replace")
+            else:
+                line = raw_line
             if cancelled and cancelled():
                 raise CancelledError("Ответ отменён.")
             if not line or not line.startswith("data:"):
