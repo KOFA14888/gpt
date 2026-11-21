@@ -1,40 +1,37 @@
 @echo off
-chcp 65001 >nul
 setlocal
 title ScreenMate AI
 cd /d "%~dp0"
 
 where python >nul 2>nul
-if errorlevel 1 (
-    echo [!] Python не найден. Установи Python 3.10+ с https://www.python.org/downloads/
-    echo     При установке обязательно отметь "Add Python to PATH".
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto nopython
 
 if not exist ".venv\Scripts\python.exe" (
-    echo [1/3] Создаю виртуальное окружение .venv ...
-    python -m venv .venv
-    if errorlevel 1 goto :fail
+  echo [1/3] Creating virtual environment...
+  python -m venv .venv
+  if errorlevel 1 goto fail
 )
 
-echo [2/3] Проверяю зависимости...
+echo [2/3] Checking dependencies...
 ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -q -r requirements.txt
-if errorlevel 1 goto :fail
+if errorlevel 1 goto fail
 
-if not exist ".env" (
-    copy /y ".env.example" ".env" >nul
-    echo [!] Создан файл .env - вставь туда API-ключ, либо введи его в настройках приложения.
-)
+if not exist ".env" copy /y ".env.example" ".env" >nul
 
-echo [3/3] Запуск ScreenMate AI...
-echo     Чат в правом нижнем углу. Трей: ПКМ по иконке - настройки / выход.
+echo [3/3] Starting ScreenMate AI...
+echo Chat: bottom-right corner. Tray icon: right click for settings and exit.
 ".venv\Scripts\python.exe" main.py
-if errorlevel 1 goto :fail
+if errorlevel 1 goto fail
 exit /b 0
+
+:nopython
+echo Python not found. Install Python 3.10+ and enable "Add Python to PATH".
+echo https://www.python.org/downloads/
+pause
+exit /b 1
 
 :fail
 echo.
-echo [!] Запуск не удался. Проверь вывод выше.
+echo Startup failed. See the messages above.
 pause
 exit /b 1
