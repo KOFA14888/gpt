@@ -53,6 +53,8 @@ DEFAULTS: dict[str, Any] = {
     "preview": True,
     "always_on_top": True,
     "attach_screenshot": True,
+    "allow_control": True,
+    "region": [],
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
 }
 
@@ -94,6 +96,8 @@ class Config:
     preview: bool = True
     always_on_top: bool = True
     attach_screenshot: bool = True
+    allow_control: bool = True
+    region: list[int] = None  # type: ignore[assignment]
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
 
     @classmethod
@@ -127,6 +131,7 @@ class Config:
 
     def normalize(self) -> None:
         self.provider = "nvidia" if str(self.provider).lower() in {"nvidia", "nim", "nvidia_nim"} else "openrouter"
+        self.allow_control = bool(self.allow_control)
         self.fps = _clamp_int(self.fps, 1, 15, 5)
         self.quality = _clamp_int(self.quality, 35, 95, 70)
         self.max_side = _clamp_int(self.max_side, 640, 2560, 1600)
@@ -135,6 +140,17 @@ class Config:
             setattr(self, name, bool(getattr(self, name)))
         for name in ("openrouter_key", "nvidia_key", "openrouter_model", "nvidia_model"):
             setattr(self, name, str(getattr(self, name) or "").strip())
+        region = getattr(self, "region", None)
+        if not isinstance(region, (list, tuple)) or len(region) != 4:
+            region = []
+        else:
+            try:
+                region = [int(v) for v in region]
+                if region[2] < 120 or region[3] < 80:
+                    region = []
+            except (TypeError, ValueError):
+                region = []
+        self.region = region
         if not self.system_prompt or not str(self.system_prompt).strip():
             self.system_prompt = DEFAULT_SYSTEM_PROMPT
 

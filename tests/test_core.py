@@ -123,8 +123,6 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(any(m.id.endswith(":free") for m in models))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class Utf8SseResponse(FakeResponse):
@@ -164,3 +162,46 @@ class WorkerTests(unittest.TestCase):
         with patch("desktop_ai.worker.ask_stream", side_effect=RuntimeError("лимит исчерпан")):
             events = self._collect(LLMWorker(object(), "question", None, []))
         self.assertEqual(events, [("failed", "лимит исчерпан")])
+
+
+class ActionTests(unittest.TestCase):
+    def test_parse_commands(self):
+        from desktop_ai.actions import parse_commands
+
+        text = "Сдвигаюсь.\n[MOVE 120 340]\n[CLICK 120 340]\nГотово."
+        clean, actions = parse_commands(text)
+        self.assertEqual(clean, "Сдвигаюсь.\n\nГотово.")
+        self.assertEqual([a.kind for a in actions], ["MOVE", "CLICK"])
+        self.assertEqual((actions[0].x, actions[0].y), (120, 340))
+
+    def test_stream_preview_hides_partial_command(self):
+        from desktop_ai.actions import clean_stream_preview
+
+        self.assertEqual(clean_stream_preview("Двигаю [MOV"), "Двигаю")
+        self.assertEqual(clean_stream_preview("Привет [CLICK 10 20] мир"), "Привет мир")
+
+
+class ChatStoreTests(unittest.TestCase):
+    def test_create_save_switch_delete(self):
+        import tempfile
+
+        from desktop_ai import chats as chats_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(chats_module, "CHATS_DIR", root / "chats"), patch.object(
+                chats_module, "ACTIVE_FILE", root / "chats" / "active.json"
+            ):
+                store = chats_module.ChatStore()
+                chat = store.create()
+                chat.messages = [{"role": "user", "content": "Что на экране?"}]
+                store.save(chat)
+                self.assertEqual(store.active_id(), chat.id)
+                self.assertEqual(store.list()[0].title, "Что на экране?")
+                self.assertEqual(store.get(chat.id).messages[0]["content"], "Что на экране?")
+                store.delete(chat.id)
+                self.assertEqual(store.list(), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

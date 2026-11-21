@@ -1,7 +1,7 @@
 """Live screen capture at a configurable frame rate (5 FPS by default).
 
-The overlay window itself is masked out of every frame, so the assistant
-never sees a feedback loop of its own chat.
+Can capture the whole virtual desktop or only a user-selected region.
+Our own overlay windows are masked out so the assistant never sees itself.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ class Frame:
     height: int
     captured_at: float
     fps: float
+    origin_x: int = 0  # global coordinate of the captured image's top-left
+    origin_y: int = 0
 
 
 class ScreenCapture(QObject):
@@ -51,7 +53,8 @@ class ScreenCapture(QObject):
         self._fps = 5
         self._quality = 70
         self._max_side = 1600
-        self._exclude: Optional[tuple[int, int, int, int]] = None
+        self._excludes: list[tuple[int, int, int, int]] = []
+        self._region: Optional[tuple[int, int, int, int]] = None
         self._last: Optional[Frame] = None
         self._times: deque[float] = deque(maxlen=12)
         self._last_error_at = 0.0
@@ -64,10 +67,23 @@ class ScreenCapture(QObject):
             self._quality = max(35, min(95, int(quality)))
             self._max_side = max(640, min(2560, int(max_side)))
 
-    def set_exclude_rect(self, rect: Optional[tuple[int, int, int, int]]) -> None:
-        """Global screen coordinates of the region to paint over (our own window)."""
+    def set_exclude_rects(self, rects: list[tuple[int, int, int, int]]) -> None:
+        """Global-coordinate rectangles to paint over (our own windows)."""
         with self._lock:
-            self._exclude = rect
+            self._excludes = list(rects)
+
+    def set_exclude_rect(self, rect: Optional[tuple[int, int, int, int]]) -> None:
+        self.set_exclude_rects([rect] if rect else [])
+
+    def set_region(self, rect: Optional[tuple[int, int, int, int]]) -> None:
+        """Capture only this global rectangle; None = whole virtual desktop."""
+        with self._lock:
+            self._region = tuple(rect) if rect else None  # type: ignore[assignment]
+
+    @property
+    def region(self) -> Optional[tuple[int, int, int, int]]:
+        with self._lock:
+            return self._region
 
     # ---------- lifecycle ----------
 
@@ -108,12 +124,12 @@ class ScreenCapture(QObject):
 
     def _loop(self) -> None:
         grabber = None
-        left = top = 0
+        desktop_left = desktop_top = 0
         try:
             if mss is not None:
                 grabber = mss.mss()
                 monitor = grabber.monitors[0]  # virtual desktop: covers all monitors
-                left, top = int(monitor["left"]), int(monitor["top"])
+                desktop_left, desktop_top = int(monitor["left"]), int(monitor["top"])
         except Exception as exc:  # pragma: no cover - depends on the OS
             grabber = None
             self._report_error(f"mss недоступен, используется PIL: {exc}")
@@ -122,7 +138,7 @@ class ScreenCapture(QObject):
         while not self._stop.is_set():
             started = time.monotonic()
             try:
-                frame = self._grab(grabber, left, top)
+                frame = self._grab(grabber, desktop_left, desktop_top)
                 if frame is not None:
                     with self._lock:
                         self._last = frame
@@ -154,25 +170,55 @@ class ScreenCapture(QObject):
             self._last_error_at = now
         self.error.emit(message)
 
-    def _grab(self, grabber, left: int, top: int) -> Optional[Frame]:
+    def _grab(self, grabber, desktop_left: int, desktop_top: int) -> Optional[Frame]:
         with self._lock:
             quality = self._quality
             max_side = self._max_side
-            exclude = self._exclude
+            excludes = list(self._excludes)
+            region = self._region
 
-        if grabber is not None:
-            monitor = grabber.monitors[0]
-            shot = grabber.grab(monitor)
-            image = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-        else:  # pragma: no cover - platform fallback
-            image = ImageGrab.grab(all_screens=True).convert("RGB")
-            left = top = 0
+        origin_x = origin_y = 0
+        if region:
+            x, y, w, h = region
+            origin_x, origin_y = x, y
+            if grabber is not None:
+                shot = grabber.grab({"left": x, "top": y, "width": w, "height": h})
+                image = Image.frombytes("RGB", (w, h), shot.bgra, "raw", "BGRX")
+            else:  # pragma: no cover - platform fallback
+                if ImageGrab is None:
+                    return None
+                image = ImageGrab.grab(
+                    bbox=(x - desktop_left, y - desktop_top, x - desktop_left + w, y - desktop_top + h),
+                    all_screens=True,
+                ).convert("RGB")
+        else:
+            origin_x, origin_y = desktop_left, desktop_top
+            if grabber is not None:
+                monitor = grabber.monitors[0]
+                shot = grabber.grab(monitor)
+                image = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+            else:  # pragma: no cover - platform fallback
+                if ImageGrab is None:
+                    return None
+                image = ImageGrab.grab(all_screens=True).convert("RGB")
 
-        if exclude:
-            x, y, w, h = exclude
-            box = (x - left, y - top, x - left + w, y - top + h)
-            draw = ImageDraw.Draw(image)
-            draw.rectangle(box, fill=(24, 26, 36))
+        draw = ImageDraw.Draw(image)
+        for ex, ey, ew, eh in excludes:
+            # Clip the overlay rectangle to the captured area.
+            box = (
+                ex - origin_x,
+                ey - origin_y,
+                ex + ew - origin_x,
+                ey + eh - origin_y,
+            )
+            box = (
+                max(0, box[0]),
+                max(0, box[1]),
+                min(image.width, box[2]),
+                min(image.height, box[3]),
+            )
+            if box[2] > box[0] and box[3] > box[1]:
+                draw.rectangle(box, fill=(24, 26, 36))
 
         image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
         buffer = io.BytesIO()
@@ -183,4 +229,6 @@ class ScreenCapture(QObject):
             height=image.height,
             captured_at=time.time(),
             fps=self.fps,
+            origin_x=origin_x,
+            origin_y=origin_y,
         )

@@ -42,9 +42,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .actions import (
+    Action,
+    clean_stream_preview,
+    click_at,
+    parse_commands,
+)
 from .capture import Frame, ScreenCapture
+from .chats import Chat, ChatStore
 from .config import Config
 from .diag import log_event
+from .region import RegionSelector
+from .virtual_cursor import VirtualCursor
 from .worker import LLMWorker
 from .providers import CancelledError, ModelInfo, ask_stream, list_models
 
@@ -68,7 +77,7 @@ QLabel#live {
 }
 QPushButton {
     background: transparent; color: #aab2c8; border: none; border-radius: 7px;
-    min-width: 26px; min-height: 24px; font-size: 14px;
+    min-width: 22px; min-height: 24px; font-size: 13px;
 }
 QPushButton:hover { background: rgba(255, 255, 255, 20); color: #ffffff; }
 QPushButton#send {
@@ -102,6 +111,15 @@ QLabel#hint, QLabel#status { color: #8e96ae; font-size: 11px; }
 QPushButton#small { min-width: 66px; min-height: 26px; background: #2b3045; }
 QCheckBox { color: #d8dcea; }
 """
+
+
+CONTROL_HINT = (
+    "\n\nУ тебя есть собственный видимый фиолетовый курсор, который пользователь видит. "
+    "Чтобы двигать его плавно или кликать, добавляй в ответ команды отдельными строками: "
+    "[MOVE x y], [CLICK x y], [RIGHT_CLICK x y], [DOUBLE_CLICK x y]. "
+    "x и y — координаты в пикселях виртуального экрана. Команды не показываются в чате, "
+    "но выполняются автоматически после ответа. Остальной текст — обычный ответ пользователю."
+)
 
 
 class MessageBubble(QFrame):
@@ -195,17 +213,33 @@ class ChatOverlay(QWidget):
         super().__init__()
         self.cfg = config
         self.capture = capture
-        self.history: list[dict[str, str]] = []
+        self.store = ChatStore()
+        _existing = self.store.list()
+        _active = self.store.active_id()
+        self.current_chat: Chat = (
+            next((c for c in _existing if c.id == _active), None)
+            or (_existing[0] if _existing else self.store.create())
+        )
+        self.store.set_active(self.current_chat.id)
+        self.history: list[dict[str, str]] = list(self.current_chat.messages)
         self._bubbles: list[MessageBubble] = []
         self._worker: Optional[LLMWorker] = None
         self._active_bubble: Optional[MessageBubble] = None
         self._quitting = False
         self._capture_warning_shown = False
+        self._raw_answer = ""
+        self._actions: list[Action] = []
+        self._selector: Optional[RegionSelector] = None
+        self._exclude_rects: list[tuple[int, int, int, int]] = []
+        self.virtual_cursor = VirtualCursor()
+        self.capture.set_region(tuple(config.region) if config.region else None)
 
         self.setObjectName("root")
         self.setWindowTitle("ScreenMate AI")
         self.setMinimumSize(320, 360)
         self._build_ui()
+        self._render_chat()
+        self._update_control_button()
         self._place_bottom_right()
         self._apply_flags()
         self._setup_tray()
@@ -218,6 +252,9 @@ class ChatOverlay(QWidget):
         self.event_timer = QTimer(self)
         self.event_timer.timeout.connect(self._drain_events)
         self.event_timer.start(40)
+        self.exclude_timer = QTimer(self)
+        self.exclude_timer.timeout.connect(self._sync_exclude)
+        self.exclude_timer.start(100)
         self.update_status()
 
     # ---------- construction ----------
@@ -250,6 +287,18 @@ class ChatOverlay(QWidget):
         head_row.addWidget(title)
         head_row.addStretch(1)
 
+        self.chats_btn = QPushButton("☰")
+        self.chats_btn.setToolTip("Чаты: переключить, новый, удалить")
+        self.chats_btn.clicked.connect(self.open_chats_menu)
+        self.clear_btn = QPushButton("⌫")
+        self.clear_btn.setToolTip("Очистить историю текущего чата")
+        self.clear_btn.clicked.connect(self.clear_current_chat)
+        self.region_btn = QPushButton("▣")
+        self.region_btn.setToolTip("Выбрать область экрана для ИИ")
+        self.region_btn.clicked.connect(self.open_region_selector)
+        self.control_btn = QPushButton("✥")
+        self.control_btn.setToolTip("ИИ управляет курсором: вкл/выкл")
+        self.control_btn.clicked.connect(self.toggle_control)
         self.preview_btn = QPushButton("◉")
         self.preview_btn.setToolTip("Показать / скрыть превью экрана")
         self.preview_btn.clicked.connect(self.toggle_preview)
@@ -262,7 +311,10 @@ class ChatOverlay(QWidget):
         self.close_btn = QPushButton("✕")
         self.close_btn.setToolTip("Скрыть в трей")
         self.close_btn.clicked.connect(self.hide)
-        for btn in (self.preview_btn, self.settings_btn, self.pause_btn, self.close_btn):
+        for btn in (
+            self.chats_btn, self.clear_btn, self.region_btn, self.control_btn,
+            self.preview_btn, self.settings_btn, self.pause_btn, self.close_btn,
+        ):
             head_row.addWidget(btn)
         head_row.setSpacing(2)
 
@@ -360,6 +412,8 @@ class ChatOverlay(QWidget):
         menu = QMenu()
         toggle = QAction("Показать / скрыть", menu)
         toggle.triggered.connect(self.toggle_visible)
+        new_chat_action = QAction("Новый чат", menu)
+        new_chat_action.triggered.connect(self.new_chat)
         pause = QAction("Пауза / продолжить", menu)
         pause.triggered.connect(self.toggle_pause)
         settings = QAction("Настройки", menu)
@@ -367,6 +421,7 @@ class ChatOverlay(QWidget):
         quit_action = QAction("Выход", menu)
         quit_action.triggered.connect(self.quit_app)
         menu.addAction(toggle)
+        menu.addAction(new_chat_action)
         menu.addAction(pause)
         menu.addAction(settings)
         menu.addSeparator()
@@ -392,14 +447,16 @@ class ChatOverlay(QWidget):
         self.update_status()
 
     def _sync_exclude(self) -> None:
-        if not self.isVisible():
-            self.capture.set_exclude_rect(None)
-            return
-        rect = self.frameGeometry()
-        pad = 14
-        self.capture.set_exclude_rect(
-            (rect.left() - pad, rect.top() - pad, rect.width() + 2 * pad, rect.height() + 2 * pad)
-        )
+        rects: list[tuple[int, int, int, int]] = []
+        if self.isVisible():
+            rect = self.frameGeometry()
+            pad = 14
+            rects.append((rect.left() - pad, rect.top() - pad, rect.width() + 2 * pad, rect.height() + 2 * pad))
+        if self.virtual_cursor.isVisible():
+            rect = self.virtual_cursor.frameGeometry()
+            rects.append((rect.left() - 4, rect.top() - 4, rect.width() + 8, rect.height() + 8))
+        self._exclude_rects = rects
+        self.capture.set_exclude_rects(rects)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -407,6 +464,7 @@ class ChatOverlay(QWidget):
 
     def hideEvent(self, event) -> None:
         super().hideEvent(event)
+        self.virtual_cursor.hide()
         self._sync_exclude()
 
     def moveEvent(self, event) -> None:
@@ -459,6 +517,172 @@ class ChatOverlay(QWidget):
             self._capture_warning_shown = True
             self.add_system(f"Захват экрана: {message}", error=True)
 
+    # ---------- chats ----------
+
+    def _clear_bubbles(self) -> None:
+        for bubble in list(self._bubbles):
+            self.chat_layout.removeWidget(bubble)
+            bubble.deleteLater()
+        self._bubbles.clear()
+
+    def _render_chat(self) -> None:
+        self._clear_bubbles()
+        for item in self.current_chat.messages:
+            role = item.get("role")
+            content = str(item.get("content") or "")
+            if role in {"user", "assistant"} and content:
+                self.add_message(content, mine=(role == "user"))
+        if not self._bubbles:
+            self.add_system(f"Чат «{self.current_chat.title}». Спроси о том, что на экране.")
+        self._scroll_bottom()
+
+    def _persist_chat(self) -> None:
+        self.current_chat.messages = list(self.history)
+        self.store.save(self.current_chat)
+
+    def _stop_active_request(self) -> None:
+        if self._worker:
+            self._worker.cancel()
+            self._worker = None
+            self._active_bubble = None
+            self.set_busy(False)
+
+    def open_chats_menu(self) -> None:
+        menu = QMenu(self)
+        new_action = menu.addAction("＋  Новый чат")
+        clear_action = menu.addAction("⌫  Очистить историю чата")
+        delete_action = menu.addAction("✕  Удалить текущий чат")
+        menu.addSeparator()
+        for chat in self.store.list()[:15]:
+            label = (chat.title or "Новый чат").replace("\n", " ")[:36]
+            action = menu.addAction(("● " if chat.id == self.current_chat.id else "   ") + label)
+            action.setCheckable(True)
+            action.setChecked(chat.id == self.current_chat.id)
+            action.triggered.connect(lambda checked=False, cid=chat.id: self.switch_chat(cid))
+        chosen = menu.exec(self.chats_btn.mapToGlobal(QPoint(0, self.chats_btn.height())))
+        if chosen == new_action:
+            self.new_chat()
+        elif chosen == clear_action:
+            self.clear_current_chat()
+        elif chosen == delete_action:
+            self.delete_current_chat()
+
+    def new_chat(self) -> None:
+        self._stop_active_request()
+        self._persist_chat()
+        self.current_chat = self.store.create()
+        self.history = []
+        self._render_chat()
+        self.update_status()
+
+    def switch_chat(self, chat_id: str) -> None:
+        if chat_id == self.current_chat.id:
+            return
+        target = self.store.get(chat_id)
+        if target is None:
+            return
+        self._stop_active_request()
+        self._persist_chat()
+        self.current_chat = target
+        self.store.set_active(chat_id)
+        self.history = list(target.messages)
+        self._render_chat()
+        self.update_status()
+
+    def clear_current_chat(self) -> None:
+        self._stop_active_request()
+        self.history = []
+        self.current_chat.messages = []
+        self.store.save(self.current_chat)
+        self._render_chat()
+        self.add_system("История чата очищена.")
+
+    def delete_current_chat(self) -> None:
+        self._stop_active_request()
+        old_id = self.current_chat.id
+        self.store.delete(old_id)
+        remaining = [c for c in self.store.list() if c.id != old_id]
+        self.current_chat = remaining[0] if remaining else self.store.create()
+        self.store.set_active(self.current_chat.id)
+        self.history = list(self.current_chat.messages)
+        self._render_chat()
+        self.update_status()
+
+    # ---------- screen region / AI cursor ----------
+
+    def open_region_selector(self) -> None:
+        if self._selector is not None:
+            return
+        was_running = self.capture.running
+        if was_running:
+            self.capture.stop()
+        initial = QRect(*self.cfg.region) if len(self.cfg.region) == 4 else None
+        selector = RegionSelector(initial, self)
+        self._selector = selector
+        selector.accepted.connect(lambda rect, w=was_running: self._on_region_accepted(rect, w))
+        selector.rejected.connect(lambda w=was_running: self._on_region_rejected(w))
+        selector.show()
+        selector.raise_()
+        selector.activateWindow()
+
+    def _on_region_accepted(self, rect: QRect, was_running: bool) -> None:
+        self.cfg.region = [rect.left(), rect.top(), rect.width(), rect.height()]
+        self.cfg.save()
+        self.capture.set_region(tuple(self.cfg.region))
+        self._selector = None
+        if was_running:
+            self.capture.start()
+        self.add_system(f"ИИ видит только область {rect.width()}×{rect.height()}.")
+        self.update_status()
+
+    def _on_region_rejected(self, was_running: bool) -> None:
+        self._selector = None
+        if was_running:
+            self.capture.start()
+
+    def toggle_control(self) -> None:
+        self.cfg.allow_control = not self.cfg.allow_control
+        self.cfg.save()
+        self._update_control_button()
+        state = "включено" if self.cfg.allow_control else "выключено"
+        self.add_system(f"Управление курсором ИИ {state}.")
+        log_event(f"AI cursor control {state}")
+
+    def _update_control_button(self) -> None:
+        color = "#6ee7a8" if self.cfg.allow_control else "#e0b45a"
+        self.control_btn.setStyleSheet(f"color: {color};")
+
+    @staticmethod
+    def _clamp_point(x: int, y: int) -> tuple[int, int]:
+        geo = QApplication.primaryScreen().virtualGeometry()
+        return max(geo.left(), min(geo.right(), int(x))), max(geo.top(), min(geo.bottom(), int(y)))
+
+    def execute_actions(self, actions: list[Action]) -> None:
+        self._actions = list(actions)
+        self._execute_next_action()
+
+    def _execute_next_action(self) -> None:
+        if not self._actions:
+            return
+        action = self._actions.pop(0)
+        if action.x is None or action.y is None:
+            center = self.virtual_cursor.center_pos()
+            x, y = center.x(), center.y()
+        else:
+            x, y = self._clamp_point(action.x, action.y)
+        log_event(f"cursor action {action.kind} -> {x},{y}")
+        if action.kind == "MOVE":
+            self.virtual_cursor.animate_to(x, y, self._execute_next_action)
+        else:
+            self.virtual_cursor.animate_to(
+                x, y, lambda: self._perform_click(action.kind, x, y)
+            )
+
+    def _perform_click(self, kind: str, x: int, y: int) -> None:
+        self.virtual_cursor.flash()
+        click_at(x, y, kind)
+        QTimer.singleShot(220, self._execute_next_action)
+
     # ---------- live frame + status ----------
 
     def on_frame(self, frame: Frame) -> None:
@@ -472,7 +696,8 @@ class ChatOverlay(QWidget):
     def update_status(self) -> None:
         running = self.capture.running
         fps = self.capture.fps if running else 0.0
-        self.fps_label.setText(f"{fps:.1f} FPS" if running else "ПАУЗА")
+        area = " · обл." if self.cfg.region else ""
+        self.fps_label.setText((f"{fps:.1f} FPS" if running else "ПАУЗА") + area)
         color = "#6ee7a8" if running else "#e0b45a"
         self.dot.setStyleSheet(f"color:{color}; font-size:11px;")
         self.live_label.setStyleSheet(
@@ -508,7 +733,8 @@ class ChatOverlay(QWidget):
         QTimer.singleShot(0, lambda: self.chat.verticalScrollBar().setValue(self.chat.verticalScrollBar().maximum()))
 
     def append_chunk(self, bubble: MessageBubble, chunk: str) -> None:
-        bubble.set_text(bubble.text() + chunk)
+        self._raw_answer += chunk
+        bubble.set_text(clean_stream_preview(self._raw_answer) or "…")
         self._scroll_bottom()
 
     def on_send_clicked(self) -> None:
@@ -531,13 +757,29 @@ class ChatOverlay(QWidget):
 
         frame = self.capture.latest()
         self.history.append({"role": "user", "content": question})
+        self._persist_chat()
         limit = max(1, self.cfg.history_limit) * 2
-        self.history = self.history[-limit:]
+        worker_history = self.history[-limit:]
 
         bubble = self.add_message("…")
         self._active_bubble = bubble
+        self._raw_answer = ""
         self.set_busy(True)
-        worker = LLMWorker(copy.copy(self.cfg), question, frame.jpeg if frame else None, list(self.history[:-1]))
+
+        screen = QApplication.primaryScreen().virtualGeometry()
+        context = (
+            f"\n\nВиртуальный экран: {screen.width()}×{screen.height()} px, "
+            f"левый верхний уг ({screen.left()},{screen.top()})."
+        )
+        if self.cfg.region:
+            rx, ry, rw, rh = self.cfg.region
+            context += f" ИИ видит только область: x={rx}, y={ry}, w={rw}, h={rh}."
+        if self.cfg.allow_control:
+            context += CONTROL_HINT
+        request_cfg = copy.copy(self.cfg)
+        request_cfg.system_prompt = self.cfg.system_prompt + context
+
+        worker = LLMWorker(request_cfg, question, frame.jpeg if frame else None, list(worker_history[:-1]))
         self._worker = worker
         log_event(f"request start: {self.cfg.provider} / {self.cfg.model}")
         worker.start()
@@ -583,9 +825,16 @@ class ChatOverlay(QWidget):
 
     def on_answer(self, bubble: MessageBubble, answer: str) -> None:
         log_event("request ok")
-        bubble.set_text(answer)
-        self.history.append({"role": "assistant", "content": answer})
+        clean, actions = parse_commands(answer)
+        bubble.set_text(clean or ("Команды курсора выполнены." if actions else answer))
+        self.history.append({"role": "assistant", "content": clean or answer})
+        self._persist_chat()
         self._finish_request()
+        if actions and self.cfg.allow_control:
+            self.add_system(f"Курсор ИИ: команд выполнено — {len(actions)}.")
+            self.execute_actions(actions)
+        elif actions:
+            self.add_system("ИИ запросил управление курсором, но оно выключено (кнопка ✥).")
 
     def on_failure(self, bubble: MessageBubble, message: str) -> None:
         log_event(f"request failed: {message}")
@@ -594,6 +843,7 @@ class ChatOverlay(QWidget):
         bubble.setStyleSheet("QFrame#bubble_error { background: rgba(190,70,80,45); border-radius:11px; }")
         if self.history and self.history[-1]["role"] == "user":
             self.history.pop()
+        self._persist_chat()
         self._finish_request()
 
     def on_cancelled(self, bubble: MessageBubble) -> None:
@@ -604,6 +854,7 @@ class ChatOverlay(QWidget):
             bubble.set_text(bubble.text() + "\n\n(отменено)")
         if self.history and self.history[-1]["role"] == "user":
             self.history.pop()
+        self._persist_chat()
         self._finish_request()
 
     # ---------- settings ----------
@@ -611,7 +862,9 @@ class ChatOverlay(QWidget):
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.cfg, self)
         if dialog.exec() == QDialog.Accepted:
+            self.capture.set_region(tuple(self.cfg.region) if self.cfg.region else None)
             self._apply_flags()
+            self._update_control_button()
             self.update_status()
 
 
@@ -698,9 +951,27 @@ class SettingsDialog(QDialog):
         self.ontop_cb.setChecked(self.cfg.always_on_top)
         self.attach_cb = QCheckBox("Прикреплять последний кадр к каждому вопросу")
         self.attach_cb.setChecked(self.cfg.attach_screenshot)
+        self.control_cb = QCheckBox("Разрешить ИИ двигать курсор и кликать")
+        self.control_cb.setChecked(self.cfg.allow_control)
         form.addWidget(self.preview_cb)
         form.addWidget(self.ontop_cb)
         form.addWidget(self.attach_cb)
+        form.addWidget(self.control_cb)
+
+        region_row = QHBoxLayout()
+        self.region_status = QLabel(
+            f"Область ИИ: {self.cfg.region[2]}×{self.cfg.region[3]}" if self.cfg.region else "Область ИИ: весь экран"
+        )
+        self.region_status.setObjectName("status")
+        reset_region = QPushButton("весь экран")
+        reset_region.setObjectName("small")
+        def _clear_region():
+            self.cfg.region = []
+            self.region_status.setText("Область ИИ: весь экран")
+        reset_region.clicked.connect(_clear_region)
+        region_row.addWidget(self.region_status, 1)
+        region_row.addWidget(reset_region)
+        form.addLayout(region_row)
 
         form.addWidget(QLabel("Системная инструкция"))
         self.prompt = QPlainTextEdit(self.cfg.system_prompt)
@@ -770,6 +1041,7 @@ class SettingsDialog(QDialog):
         self.cfg.preview = self.preview_cb.isChecked()
         self.cfg.always_on_top = self.ontop_cb.isChecked()
         self.cfg.attach_screenshot = self.attach_cb.isChecked()
+        self.cfg.allow_control = self.control_cb.isChecked()
         self.cfg.fps = self.fps.value()
         self.cfg.quality = self.quality.value()
         self.cfg.system_prompt = self.prompt.toPlainText().strip()
