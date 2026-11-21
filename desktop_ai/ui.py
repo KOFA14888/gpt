@@ -4,19 +4,12 @@ from __future__ import annotations
 
 import copy
 import html
+import queue
 import threading
+import traceback
 from typing import Optional
 
-from PySide6.QtCore import (
-    QObject,
-    QPoint,
-    QRect,
-    QThread,
-    QTimer,
-    Qt,
-    Signal,
-    Slot,
-)
+from PySide6.QtCore import QPoint, QRect, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -51,6 +44,8 @@ from PySide6.QtWidgets import (
 
 from .capture import Frame, ScreenCapture
 from .config import Config
+from .diag import log_event
+from .worker import LLMWorker
 from .providers import CancelledError, ModelInfo, ask_stream, list_models
 
 STYLE_SHEET = """
@@ -193,49 +188,6 @@ class ResizeGrip(QLabel):
         self._origin = None
 
 
-class LLMWorker(QObject):
-    chunk = Signal(str)
-    done = Signal(str)
-    failed = Signal(str)
-    cancelled = Signal()
-
-    def __init__(
-        self,
-        config: Config,
-        question: str,
-        frame_jpeg: Optional[bytes],
-        history: list[dict[str, str]],
-    ) -> None:
-        super().__init__()
-        self.config = config
-        self.question = question
-        self.frame_jpeg = frame_jpeg
-        self.history = history
-        self._cancel = threading.Event()
-
-    def cancel(self) -> None:
-        self._cancel.set()
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            answer = ask_stream(
-                config=self.config,
-                question=self.question,
-                frame_jpeg=self.frame_jpeg,
-                history=self.history,
-                on_chunk=lambda text: self.chunk.emit(text),
-                cancelled=self._cancel.is_set,
-            )
-        except CancelledError:
-            self.cancelled.emit()
-            return
-        except Exception as exc:  # noqa: BLE001 - show any API failure in chat
-            self.failed.emit(str(exc))
-            return
-        self.done.emit(answer)
-
-
 class ChatOverlay(QWidget):
     """Small frameless chat window pinned above all other windows."""
 
@@ -246,7 +198,7 @@ class ChatOverlay(QWidget):
         self.history: list[dict[str, str]] = []
         self._bubbles: list[MessageBubble] = []
         self._worker: Optional[LLMWorker] = None
-        self._thread: Optional[QThread] = None
+        self._active_bubble: Optional[MessageBubble] = None
         self._quitting = False
         self._capture_warning_shown = False
 
@@ -263,6 +215,9 @@ class ChatOverlay(QWidget):
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(400)
+        self.event_timer = QTimer(self)
+        self.event_timer.timeout.connect(self._drain_events)
+        self.event_timer.start(40)
         self.update_status()
 
     # ---------- construction ----------
@@ -580,18 +535,40 @@ class ChatOverlay(QWidget):
         self.history = self.history[-limit:]
 
         bubble = self.add_message("…")
+        self._active_bubble = bubble
         self.set_busy(True)
         worker = LLMWorker(copy.copy(self.cfg), question, frame.jpeg if frame else None, list(self.history[:-1]))
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.chunk.connect(lambda text: self.append_chunk(bubble, text))
-        worker.done.connect(lambda answer: self.on_answer(bubble, answer))
-        worker.failed.connect(lambda message: self.on_failure(bubble, message))
-        worker.cancelled.connect(lambda: self.on_cancelled(bubble))
         self._worker = worker
-        self._thread = thread
-        thread.start()
+        log_event(f"request start: {self.cfg.provider} / {self.cfg.model}")
+        worker.start()
+
+    def _drain_events(self) -> None:
+        worker = self._worker
+        if worker is None:
+            return
+        while True:
+            try:
+                kind, payload = worker.events.get_nowait()
+            except queue.Empty:
+                return
+            if worker is not self._worker or self._active_bubble is None:
+                return  # a newer request already took over
+            try:
+                if kind == "chunk":
+                    self.append_chunk(self._active_bubble, payload)
+                elif kind == "done":
+                    self.on_answer(self._active_bubble, payload)
+                    return
+                elif kind == "failed":
+                    self.on_failure(self._active_bubble, payload)
+                    return
+                elif kind == "cancelled":
+                    self.on_cancelled(self._active_bubble)
+                    return
+            except Exception:  # never let a UI rendering error kill the app
+                log_event("UI error:\n" + traceback.format_exc())
+                self._finish_request()
+                return
 
     def set_busy(self, busy: bool) -> None:
         self.input.setDisabled(busy)
@@ -599,24 +576,19 @@ class ChatOverlay(QWidget):
         self.send_btn.setToolTip("Отменить ответ" if busy else "Отправить (Enter)")
 
     def _finish_request(self) -> None:
-        worker, thread = self._worker, self._thread
+        # No QThread/QObject teardown here — that was the source of silent crashes.
         self._worker = None
-        self._thread = None
+        self._active_bubble = None
         self.set_busy(False)
-        if thread:
-            thread.quit()
-            thread.wait(1500)
-        if worker:
-            worker.deleteLater()
-        if thread:
-            thread.deleteLater()
 
     def on_answer(self, bubble: MessageBubble, answer: str) -> None:
+        log_event("request ok")
         bubble.set_text(answer)
         self.history.append({"role": "assistant", "content": answer})
         self._finish_request()
 
     def on_failure(self, bubble: MessageBubble, message: str) -> None:
+        log_event(f"request failed: {message}")
         bubble.set_text(message)
         bubble.setObjectName("bubble_error")
         bubble.setStyleSheet("QFrame#bubble_error { background: rgba(190,70,80,45); border-radius:11px; }")
@@ -625,6 +597,7 @@ class ChatOverlay(QWidget):
         self._finish_request()
 
     def on_cancelled(self, bubble: MessageBubble) -> None:
+        log_event("request cancelled")
         if not bubble.text() or bubble.text() == "…":
             bubble.set_text("Отменено.")
         else:

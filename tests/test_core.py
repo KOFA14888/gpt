@@ -116,3 +116,35 @@ class ProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkerTests(unittest.TestCase):
+    def _collect(self, worker):
+        events = []
+        worker.start()
+        worker.thread.join(timeout=3)
+        while True:
+            try:
+                events.append(worker.events.get_nowait())
+            except Exception:
+                break
+        return events
+
+    def test_worker_streams_then_finishes(self):
+        def fake_ask(**kwargs):
+            kwargs["on_chunk"]("Привет")
+            kwargs["on_chunk"](", мир!")
+            return "Привет, мир!"
+
+        with patch("desktop_ai.worker.ask_stream", side_effect=fake_ask):
+            from desktop_ai.worker import LLMWorker
+
+            events = self._collect(LLMWorker(object(), "вопрос", None, []))
+        self.assertEqual(events, [("chunk", "Привет"), ("chunk", ", мир!"), ("done", "Привет, мир!")])
+
+    def test_worker_reports_failure_without_crashing(self):
+        from desktop_ai.worker import LLMWorker
+
+        with patch("desktop_ai.worker.ask_stream", side_effect=RuntimeError("лимит исчерпан")):
+            events = self._collect(LLMWorker(object(), "question", None, []))
+        self.assertEqual(events, [("failed", "лимит исчерпан")])
