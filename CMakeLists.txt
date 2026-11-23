@@ -7,7 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_executable(screenmate
+set(SM_SOURCES
   src/main.cpp
   src/http.cpp
   src/screen.cpp
@@ -17,11 +17,29 @@ add_executable(screenmate
   src/agent.cpp
   src/tui.cpp
   src/webui.cpp
+  src/desktop.cpp
 )
+
+if(WIN32)
+  list(APPEND SM_SOURCES
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_demo.cpp
+    third_party/imgui/backends/imgui_impl_win32.cpp
+    third_party/imgui/backends/imgui_impl_dx11.cpp
+    third_party/imgui/misc/cpp/imgui_stdlib.cpp
+  )
+endif()
+
+add_executable(screenmate ${SM_SOURCES})
 
 target_include_directories(screenmate PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends
 )
 
 if(MSVC)
@@ -39,6 +57,7 @@ endif()
 if(WIN32)
   target_link_libraries(screenmate PRIVATE
     winhttp user32 gdi32 psapi shell32 advapi32 ws2_32
+    d3d11 dxgi
   )
 else()
   find_package(CURL QUIET)

@@ -1,6 +1,6 @@
 // ScreenMate AI — terminal coding agent with screen vision.
 // Commands:
-//   screenmate                graphical chat GUI (browser window)
+//   screenmate                native desktop chat window
 //   screenmate tui             interactive terminal UI
 //   screenmate run "prompt"   one-shot agent turn (prints answer)
 //   screenmate auth login     save API keys interactively
@@ -8,6 +8,7 @@
 //   screenmate models         list free vision models
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <mutex>
@@ -21,6 +22,7 @@
 #include "http.hpp"
 #include "tui.hpp"
 #include "tools.hpp"
+#include "desktop.hpp"
 #include "webui.hpp"
 
 #ifdef _WIN32
@@ -42,13 +44,14 @@ static void print_usage() {
     std::cout <<
         "ScreenMate AI — coding agent with screen vision\n"
         "\n"
-        "  screenmate                 open graphical chat GUI in browser\n"
+        "  screenmate                 open native desktop window\n"
         "  screenmate tui              terminal UI (Tab: build/plan)\n"
         "  screenmate run \"prompt\"    one-shot: agent works, prints answer\n"
         "  screenmate run -p \"...\"    same (plan/read-only mode)\n"
         "  screenmate auth login      enter OpenRouter / NVIDIA keys\n"
         "  screenmate auth status     show provider + model\n"
-        "  screenmate serve [--port N]  HTTP server: POST /chat {\"message\":\"...\"}\n"
+        "  screenmate web [--port N]    browser GUI (optional)\n"
+        "  screenmate serve [--port N]  headless API: POST /chat\n"
         "  screenmate models          refresh model list from providers\n"
         "  screenmate help\n";
 }
@@ -315,14 +318,21 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     if (args.empty()) {
-        // Graphical chat UI (default)
-        return gui_run(8765);
+        int rc = desktop_run();
+        if (rc >= 0) return rc;
+        Config cfg = Config::load();
+        TuiApp app(std::move(cfg));
+        return app.run();
     }
 
     const std::string& cmd = args[0];
     if (cmd == "help" || cmd == "--help" || cmd == "-h") {
         print_usage();
         return 0;
+    }
+    if (cmd == "web") {
+        std::vector<std::string> rest(args.begin() + 1, args.end());
+        return gui_run(rest.empty() ? 8765 : std::atoi(rest[0].c_str()));
     }
     if (cmd == "tui" || cmd == "term" || cmd == "cli") {
         Config cfg = Config::load();

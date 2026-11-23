@@ -12,7 +12,7 @@ the main app.
 
 | Area | What you get |
 | --- | --- |
-| GUI | default launch: animated dark chat in browser window (SSE streaming, **Tab** = build/plan) |
+| GUI | default launch: **native desktop window** (Win32 + DirectX 11 + Dear ImGui), **Tab** = build/plan |
 | TUI | `screenmate tui` — fullscreen terminal chat, **Tab** switches `BUILD` ↔ `PLAN` |
 | Agents | **build** — full access (files, shell, cursor); **plan** — read-only analysis |
 | Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `cursor` `lsp` — cursor: MOVE/HOVER/CLICK/DRAG/SCROLL/KEY/TYPE/POS (real mouse) |
@@ -54,7 +54,9 @@ cmake -B build && cmake --build build
 ## Usage
 
 ```text
-screenmate                 # interactive TUI
+screenmate                 # native desktop window
+screenmate tui             # terminal UI
+screenmate web             # browser UI
 screenmate tui             # terminal UI
 screenmate run "опиши что на экране"
 screenmate run -p "план: как устроен этот репозиторий"
