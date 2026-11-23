@@ -691,9 +691,9 @@ int gui_run(int port) {
             int n = recv(c, buf, sizeof(buf), 0);
             if (n <= 0) break;
             req.append(buf, (size_t)n);
+            hdr_end = req.find("\r\n\r\n");
             if (req.size() > 1 << 20) break;
         }
-        hdr_end = req.find("\r\n\r\n");
         if (hdr_end == std::string::npos) {
             closesocket(c);
             continue;
