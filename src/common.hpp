@@ -99,6 +99,10 @@ inline std::string base64_encode(const std::string& in) {
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+// winsock2 must precede windows.h — otherwise windows.h pulls winsock.h
+// and the SDK headers (ws2def.h / inaddr.h) fail with C2146/C4430.
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 
 inline std::wstring utf8_to_wide(const std::string& s) {

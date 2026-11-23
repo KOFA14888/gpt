@@ -15,7 +15,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
 #include <shellapi.h>
 #include <psapi.h>
 #pragma comment(lib, "gdi32.lib")

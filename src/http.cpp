@@ -15,7 +15,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 #elif !defined(SM_NO_HTTP)
