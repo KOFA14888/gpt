@@ -249,7 +249,7 @@ void TuiApp::submit() {
     if (text == "/help") {
         push_line("sys",
                   "Commands: /mode /clear /exit · tools: read/write/edit/grep/glob/shell/"
-                  "screenshot/list_windows/cursor/lsp");
+                  "screenshot/list_windows/lsp");
         return;
     }
 

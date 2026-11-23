@@ -11,7 +11,6 @@ set(SM_SOURCES
   src/main.cpp
   src/http.cpp
   src/screen.cpp
-  src/cursor.cpp
   src/lsp.cpp
   src/tools.cpp
   src/agent.cpp

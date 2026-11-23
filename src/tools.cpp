@@ -1,7 +1,6 @@
 #include "tools.hpp"
 
 #include "common.hpp"
-#include "cursor.hpp"
 #include "lsp.hpp"
 #include "screen.hpp"
 
@@ -291,7 +290,7 @@ static json tool_shell(ToolContext& ctx, const json& args) {
 #endif
 }
 
-// ---------- screen / cursor ----------
+// ---------- screen ----------
 
 static json tool_screenshot(ToolContext& ctx, const json& args) {
     (void)args;
@@ -318,32 +317,6 @@ static json tool_list_windows(ToolContext&, const json&) {
         out += "\n";
     }
     return ok(clamp_text(out));
-}
-
-static json tool_cursor(ToolContext& ctx, const json& args) {
-    if (ctx.mode == AgentMode::Plan) return fail("plan mode: cursor is disabled");
-    CursorAction a;
-    a.kind = args.value("action", "MOVE");
-    std::transform(a.kind.begin(), a.kind.end(), a.kind.begin(),
-                   [](unsigned char c) { return (char)std::toupper(c); });
-    a.x = args.value("x", 0);
-    a.y = args.value("y", 0);
-    a.x2 = args.value("x2", args.value("end_x", 0));
-    a.y2 = args.value("y2", args.value("end_y", 0));
-    a.dx = args.value("dx", args.value("notches", 0));
-    a.dy = args.value("dy", 0);
-    a.text = args.value("text", args.value("key", ""));
-    auto clamp_pt = [&](int& x, int& y) {
-        if (ctx.cfg && ctx.cfg->region.size() == 4) {
-            int rx = ctx.cfg->region[0], ry = ctx.cfg->region[1];
-            int rw = ctx.cfg->region[2], rh = ctx.cfg->region[3];
-            x = std::clamp(x, rx, rx + rw - 1);
-            y = std::clamp(y, ry, ry + rh - 1);
-        }
-    };
-    clamp_pt(a.x, a.y);
-    clamp_pt(a.x2, a.y2);
-    return ok(cursor_perform(a));
 }
 
 // ---------- LSP ----------
@@ -432,23 +405,6 @@ nlohmann::json tool_schemas(AgentMode mode) {
             json{{prop("command", "string", "command line")},
                  {"timeout", {{"type", "integer"}, {"description", "seconds, default 60"}}}},
             {"command"});
-        add("cursor",
-            "Drive the real mouse/keyboard on the user's screen. "
-            "Workflow: screenshot → find target pixels → act → screenshot to verify. "
-            "Actions: MOVE/HOVER(x,y); CLICK/RIGHT_CLICK/MIDDLE_CLICK/DOUBLE_CLICK(x,y); "
-            "DRAG(x,y to x2,y2); SCROLL(x,y,dx notches, +up/−down); "
-            "KEY(text=enter|ctrl+s|f5…); TYPE(text); POS(). "
-            "After MOVE the pointer stays there (hover works). Absolute screen pixels.",
-            json{{prop("action", "string",
-                       "MOVE | HOVER | CLICK | RIGHT_CLICK | MIDDLE_CLICK | "
-                       "DOUBLE_CLICK | DRAG | SCROLL | KEY | TYPE | POS")},
-                 {"x", {{"type", "integer"}, {"description", "screen x (DRAG start, SCROLL anchor)"}}},
-                 {"y", {{"type", "integer"}, {"description", "screen y"}}},
-                 {"x2", {{"type", "integer"}, {"description", "DRAG end x"}}},
-                 {"y2", {{"type", "integer"}, {"description", "DRAG end y"}}},
-                 {"dx", {{"type", "integer"}, {"description", "SCROLL notches (+up, −down)"}}},
-                 {"text", {{"type", "string"}, {"description", "TYPE text or KEY name (enter, ctrl+s, esc…)"}}}},
-            {"action"});
     }
     return schemas;
 }
@@ -467,61 +423,10 @@ nlohmann::json run_tool(ToolContext& ctx, const std::string& name, const nlohman
         if (name == "write_file") return tool_write_file(ctx, args);
         if (name == "edit_file") return tool_edit_file(ctx, args);
         if (name == "shell") return tool_shell(ctx, args);
-        if (name == "cursor") return tool_cursor(ctx, args);
         return fail("unknown tool: " + name);
     } catch (const std::exception& e) {
         return fail(std::string("tool error: ") + e.what());
     }
-}
-
-std::vector<std::string> run_bracket_commands(const std::string& text, ToolContext& ctx) {
-    // [MOVE x y] / [CLICK x y] / [RIGHT_CLICK x y] / [DOUBLE_CLICK x y] / [TYPE ...]
-    static const std::regex re(
-        R"(\[\s*(MOVE|HOVER|CLICK|RIGHT_CLICK|MIDDLE_CLICK|DOUBLE_CLICK|DRAG|SCROLL|KEY|TYPE|POS)\s*([^\]]*)\])",
-        std::regex::icase);
-    std::vector<std::string> results;
-    auto begin = std::sregex_iterator(text.begin(), text.end(), re);
-    for (auto it = begin; it != std::sregex_iterator(); ++it) {
-        std::string kind = (*it)[1].str();
-        std::transform(kind.begin(), kind.end(), kind.begin(),
-                       [](unsigned char c) { return (char)std::toupper(c); });
-        std::string rest = trim((*it)[2].str());
-        CursorAction a;
-        a.kind = kind;
-        if (kind == "TYPE" || kind == "KEY") {
-            a.text = rest;
-        } else if (kind == "POS") {
-            // no args
-        } else if (kind == "SCROLL") {
-            int x = 0, y = 0, n = 0;
-            if (std::sscanf(rest.c_str(), "%d%*[, ]%d%*[, ]%d", &x, &y, &n) == 3) {
-                a.x = x; a.y = y; a.dx = n;
-            } else if (std::sscanf(rest.c_str(), "%d", &n) == 1) {
-                a.dx = n;
-            } else {
-                continue;
-            }
-        } else if (kind == "DRAG") {
-            int x = 0, y = 0, x2 = 0, y2 = 0;
-            if (std::sscanf(rest.c_str(), "%d%*[, ]%d%*[, ]%d%*[, ]%d",
-                            &x, &y, &x2, &y2) == 4) {
-                a.x = x; a.y = y; a.x2 = x2; a.y2 = y2;
-            } else {
-                continue;
-            }
-        } else {
-            int x = 0, y = 0;
-            if (std::sscanf(rest.c_str(), "%d%*[, ]%d", &x, &y) == 2) {
-                a.x = x;
-                a.y = y;
-            } else {
-                continue;
-            }
-        }
-        if (ctx.mode == AgentMode::Plan) continue;
-        results.push_back(cursor_perform(a));
-    }
-    return results;
 }
 
 }  // namespace sm

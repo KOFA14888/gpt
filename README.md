@@ -3,7 +3,7 @@
 Terminal agent in the spirit of OpenCode / Claude Code, written in **C++17**:
 reads and edits your project, runs shell commands, searches code, talks to an
 LSP — and **sees your screen** (screenshot + window list) so it can tell which
-program is open, what the buttons say, and move a real mouse cursor.
+program is open and what the buttons say.
 
 Python GUI from earlier versions lives in [`legacy/`](legacy/) and is no longer
 the main app.
@@ -14,10 +14,9 @@ the main app.
 | --- | --- |
 | GUI | default launch: **web GUI** in the browser (animated chat, SSE streaming, **Tab** = build/plan); native window via `screenmate desktop` |
 | TUI | `screenmate tui` — fullscreen terminal chat, **Tab** switches `BUILD` ↔ `PLAN` |
-| Agents | **build** — full access (files, shell, cursor); **plan** — read-only analysis |
-| Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `cursor` `lsp` — cursor: MOVE/HOVER/CLICK/DRAG/SCROLL/KEY/TYPE/POS (real mouse) |
+| Agents | **build** — full access (files, shell); **plan** — read-only analysis |
+| Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `lsp` |
 | Vision | GDI screenshot (JPEG) + `list_windows` (titles + process names) |
-| Cursor | Real mouse via SendInput: `MOVE` `HOVER` `CLICK` `RIGHT_CLICK` `MIDDLE_CLICK` `DOUBLE_CLICK` `DRAG` `SCROLL` `KEY` `TYPE` `POS`; clamped to work region |
 | LSP | definition / hover via spawned language server (`pylsp`, `clangd`, …) |
 | Providers | NVIDIA NIM, OpenRouter, OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, Together, custom OpenAI-compatible — pick + paste key in **Settings ⚙** |
 | CLI | `run`, `auth login`, `serve`, `models` |
@@ -109,12 +108,12 @@ Keys are stored in `%APPDATA%\screenmate_ai\config.json` (Windows) or
 }
 ```
 
-`region` clamps both screenshots and AI cursor actions to a work area.
+`region` clamps screenshots to a work area.
 
 ## Layout
 
 ```text
-src/           C++17 sources (agent, TUI, tools, LSP, screen, cursor, HTTP)
+src/           C++17 sources (agent, TUI, tools, LSP, screen, HTTP)
 third_party/   nlohmann/json + stb_image_write (vendored)
 .github/       Actions workflow
 legacy/        old Python overlay (frozen)

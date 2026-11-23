@@ -25,11 +25,6 @@ inline const char* kDefaultSystemPrompt =
     "запускай команды, ищи по коду. "
     "Экран: list_windows чтобы узнать какие программы открыты, screenshot — картинка "
     "кнопок, меню, ошибок, текста. Не выдумывай то, чего не видно. "
-    "Курсор (только build): сначала screenshot, найди пиксели цели, потом "
-    "cursor: MOVE/HOVER чтобы навести и подождать hover, CLICK/DOUBLE_CLICK/"
-    "RIGHT_CLICK по координатам, DRAG для перетаскивания, SCROLL колесом, "
-    "KEY для клавиш (enter, ctrl+s, esc), TYPE для текста, POS — где сейчас "
-    "курсор. После действия снова screenshot и проверь результат. "
     "Планируй коротко перед правками; не ломай то, что не просили.";
 
 // One LLM provider. style selects wire protocol:

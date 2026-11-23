@@ -6,11 +6,14 @@
 #include "agent.hpp"
 #include "common.hpp"
 #include "config.hpp"
+#include "http.hpp"
 #include "tools.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <sstream>
@@ -74,11 +77,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
-  .app {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
+  .app { height: 100%; display: flex; flex-direction: column; }
 
   /* ---------- header ---------- */
   header {
@@ -108,13 +107,6 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     animation: blink 1.2s steps(1) infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
-  .brand .tag {
-    font: 12px var(--mono);
-    color: var(--dim);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .headright { display: flex; align-items: center; gap: 10px; }
 
   .mode {
@@ -152,18 +144,71 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .iconbtn:hover { color: var(--text); border-color: var(--border-strong); }
   .iconbtn svg { width: 15px; height: 15px; }
 
-  /* ---------- chat ---------- */
-  .chat {
-    flex: 1;
-    overflow-y: auto;
-    scroll-behavior: smooth;
+  /* ---------- session tabs ---------- */
+  .tabs {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .chat-inner, .hero, .banner, #stream {
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    font: 12.5px var(--mono);
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 230px;
+    flex: none;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .tab:hover { color: var(--text); border-color: var(--border-strong); }
+  .tab.active {
+    color: var(--text);
+    background: var(--surface2);
+    border-color: var(--border-strong);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .tab.inactive { opacity: .6; }
+  .tab .tname { overflow: hidden; text-overflow: ellipsis; }
+  .tab .x {
+    color: var(--dim);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 3px;
+  }
+  .tab .x:hover { color: var(--red); background: rgba(224,108,117,.12); }
+  .tab-add {
+    flex: none;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--dim);
+    font: 12.5px var(--mono);
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tab-add:hover { color: var(--text); border-color: var(--border-strong); }
+
+  /* ---------- chat ---------- */
+  .chat { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 0 20px; }
+  .hero, .banner, #stream, .status, .ctxbar {
     max-width: 760px;
     margin-left: auto;
     margin-right: auto;
   }
-  .chat { padding: 0 20px; }
   .chat::-webkit-scrollbar { width: 10px; }
   .chat::-webkit-scrollbar-thumb { background: #222; border: 3px solid var(--bg); border-radius: 6px; }
   .chat::-webkit-scrollbar-thumb:hover { background: #2e2e2e; }
@@ -218,10 +263,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     border-radius: 4px;
   }
 
-  /* status line */
   .status {
-    max-width: 760px;
-    margin: 0 auto;
     min-height: 20px;
     padding-top: 10px;
     font: 12px var(--mono);
@@ -241,7 +283,6 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     animation: blink 1s steps(1) infinite;
   }
 
-  /* typing */
   .typing { display: inline-flex; gap: 5px; padding: 4px 0; }
   .typing i {
     width: 5px; height: 5px;
@@ -252,20 +293,9 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .typing i:nth-child(3) { animation-delay: .36s; }
   @keyframes typePulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; background: var(--muted); } }
 
-  /* hero */
   .hero { padding: 56px 0 8px; }
-  .hero h2 {
-    font-size: 21px;
-    font-weight: 650;
-    letter-spacing: -.01em;
-    margin-bottom: 8px;
-  }
-  .hero p {
-    color: var(--muted);
-    font-size: 14px;
-    max-width: 540px;
-    margin-bottom: 18px;
-  }
+  .hero h2 { font-size: 21px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 8px; }
+  .hero p { color: var(--muted); font-size: 14px; max-width: 540px; margin-bottom: 18px; }
   .hero p b { color: var(--text); font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
@@ -280,7 +310,6 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   }
   .chip:hover { color: var(--text); border-color: var(--border-strong); }
 
-  /* banner */
   .banner {
     display: none;
     margin-top: 14px;
@@ -294,24 +323,49 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .banner.on { display: block; }
   .banner code, .banner b { font-family: var(--mono); color: var(--accent); font-weight: 600; }
 
-  /* ---------- footer / composer ---------- */
-  footer {
-    flex: none;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
-    padding: 0 20px 14px;
-  }
-  .composer, .hint, .status {
-    max-width: 760px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  .composer {
+  /* ---------- footer ---------- */
+  footer { flex: none; border-top: 1px solid var(--border); background: var(--bg); padding: 0 20px 14px; }
+  .ctxbar {
     display: flex;
     gap: 10px;
-    align-items: flex-end;
-    padding-top: 4px;
+    align-items: center;
+    padding-top: 10px;
   }
+  .folderbtn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font: 12px var(--mono);
+    padding: 6px 10px;
+    cursor: pointer;
+    max-width: 55%;
+    overflow: hidden;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .folderbtn:hover { color: var(--text); border-color: var(--border-strong); }
+  .folderbtn svg { width: 13px; height: 13px; flex: none; }
+  .folderbtn .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modelsel {
+    margin-left: auto;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: 12.5px var(--mono);
+    padding: 6px 8px;
+    max-width: 45%;
+    cursor: pointer;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+  .modelsel:hover, .modelsel:focus { border-color: var(--border-strong); }
+  .modelsel option { background: var(--bg-soft); }
+
+  .composer { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; padding-top: 10px; }
   textarea {
     flex: 1;
     resize: none;
@@ -343,10 +397,11 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .send:disabled { opacity: .45; cursor: not-allowed; }
   .send svg { width: 16px; height: 16px; }
   .hint {
+    max-width: 760px;
+    margin: 8px auto 0;
     display: flex;
     justify-content: space-between;
     gap: 8px;
-    margin-top: 8px;
     font: 11.5px var(--mono);
     color: var(--dim);
   }
@@ -359,7 +414,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     color: var(--muted);
   }
 
-  /* ---------- settings ---------- */
+  /* ---------- modals ---------- */
   .overlay {
     position: fixed;
     inset: 0;
@@ -370,7 +425,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   }
   .overlay.on { display: grid; }
   .sheet {
-    width: min(440px, calc(100vw - 32px));
+    width: min(460px, calc(100vw - 32px));
     max-height: calc(100vh - 60px);
     overflow-y: auto;
     background: var(--bg-soft);
@@ -386,11 +441,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     color: var(--text);
     margin-bottom: 4px;
   }
-  .sheet .sub {
-    font-size: 12.5px;
-    color: var(--muted);
-    margin-bottom: 18px;
-  }
+  .sheet .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 18px; }
   .sheet .sub span { font-family: var(--mono); font-size: 11.5px; color: var(--purple); word-break: break-all; }
   .field { margin-bottom: 14px; }
   .field label {
@@ -401,7 +452,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     color: var(--muted);
     margin-bottom: 6px;
   }
-  .field input, .field select, .field textarea {
+  .field input, .field select {
     width: 100%;
     padding: 9px 11px;
     background: var(--bg);
@@ -412,15 +463,16 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     outline: none;
     transition: border-color .15s ease;
   }
-  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--border-strong); }
+  .field input:focus, .field select:focus { border-color: var(--border-strong); }
   .field input::placeholder { color: var(--dim); }
-  .field textarea { font-size: 13px; line-height: 1.5; resize: vertical; min-height: 84px; }
   .field select option { background: var(--bg-soft); }
   .field .hint {
+    display: block;
     font: 11.5px var(--sans);
     color: var(--dim);
     margin-top: 5px;
-    display: block;
+    max-width: none;
+    margin-left: 0;
   }
   .keyrow { display: flex; gap: 8px; }
   .keyrow input { flex: 1; font-family: var(--mono); font-size: 13px; }
@@ -457,6 +509,65 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   }
   .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
 
+  /* history list in settings */
+  .histlist { display: flex; flex-direction: column; gap: 6px; }
+  .histrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 10px;
+    font: 12.5px var(--mono);
+  }
+  .histrow .hname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .histrow .hdate { color: var(--dim); font-size: 11px; flex: none; }
+  .histrow button {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font: 11.5px var(--mono);
+    padding: 3px 8px;
+    cursor: pointer;
+    flex: none;
+    transition: color .15s, border-color .15s;
+  }
+  .histrow button:hover { color: var(--text); border-color: var(--border-strong); }
+  .histrow button.del:hover { color: var(--red); border-color: rgba(224,108,117,.4); }
+  .histempty { font: 12px var(--mono); color: var(--dim); }
+
+  /* folder browser */
+  .fblist {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    margin-top: 8px;
+  }
+  .fbrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    font: 13px var(--mono);
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 1px solid #1a1a1a;
+    transition: background .1s ease, color .1s ease;
+  }
+  .fbrow:last-child { border-bottom: 0; }
+  .fbrow:hover { background: var(--surface); color: var(--text); }
+  .fbrow .ic { color: var(--accent-dim); flex: none; }
+  .fbpath {
+    font: 12px var(--mono);
+    color: var(--purple);
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+
   .toast {
     position: fixed;
     bottom: 24px;
@@ -476,7 +587,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 640px) {
-    .brand .tag { display: none; }
+    .tab { max-width: 140px; }
     .msg.user { max-width: 92%; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -489,7 +600,6 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   <header>
     <div class="brand">
       <h1>screenmate<span class="cursor" aria-hidden="true"></span></h1>
-      <span class="tag">coding agent · экран + код</span>
     </div>
     <div class="headright">
       <div class="mode" id="mode" title="Tab / клик — сменить режим">
@@ -501,6 +611,10 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       </button>
     </div>
   </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab-add" id="tabAdd" title="Новая сессия">+ новая</button>
+  </div>
 
   <main class="chat" id="chat">
     <div class="hero" id="hero">
@@ -518,6 +632,15 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   </main>
 
   <footer>
+    <div class="ctxbar">
+      <button class="folderbtn" id="folderBtn" title="Папка проекта">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span class="fname" id="folderName">…</span>
+      </button>
+      <select class="modelsel" id="modelSel" title="Модель">
+        <option value="">модели…</option>
+      </select>
+    </div>
     <div class="composer">
       <textarea id="input" rows="1" placeholder="Задача для агента…  Enter — отправить, Shift+Enter — перенос"></textarea>
       <button class="send" id="send" title="Отправить" aria-label="Отправить">
@@ -525,16 +648,16 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       </button>
     </div>
     <div class="hint">
-      <span><kbd>Tab</kbd> build/plan · <kbd>Ctrl</kbd>+<kbd>L</kbd> очистить</span>
-      <span id="busyHint"></span>
+      <span><kbd>Tab</kbd> build/plan</span>
     </div>
   </footer>
 </div>
 
+<!-- settings -->
 <div class="overlay" id="settingsOverlay">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
     <h3 id="setTitle">Settings</h3>
-    <div class="sub">Провайдер, API-ключ и модель · <span id="cfgPath"></span></div>
+    <div class="sub">Провайдер и ключ · <span id="cfgPath"></span></div>
 
     <div class="field">
       <label for="setProvider">Провайдер</label>
@@ -559,15 +682,9 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       <div class="hint">LM Studio / Ollama / vLLM: http://localhost:1234/v1</div>
     </div>
 
-    <div class="field">
-      <label for="setModel">Модель</label>
-      <input type="text" id="setModel" placeholder="default" autocomplete="off" spellcheck="false"/>
-      <div class="hint" id="modelDefault">…</div>
-    </div>
-
-    <div class="field">
-      <label for="setPrompt">Системный промпт</label>
-      <textarea id="setPrompt" rows="4"></textarea>
+    <div class="field" id="histField" style="display:none">
+      <label>История сессий</label>
+      <div class="histlist" id="histList"></div>
     </div>
 
     <div class="actions">
@@ -576,6 +693,24 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     </div>
   </div>
 </div>
+
+<!-- folder picker -->
+<div class="overlay" id="folderOverlay">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>Папка проекта</h3>
+    <div class="sub">Агент работает в выбранной папке</div>
+    <div class="fbpath" id="fbPath">…</div>
+    <div class="field">
+      <input type="text" id="fbInput" placeholder="путь и Enter…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="fblist" id="fbList"></div>
+    <div class="actions">
+      <button class="btn" id="fbCancel">Отмена</button>
+      <button class="btn primary" id="fbOk">Выбрать эту папку</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 const chat = document.getElementById('chat');
@@ -587,11 +722,27 @@ const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const banner = document.getElementById('banner');
 const hero = document.getElementById('hero');
-const busyHint = document.getElementById('busyHint');
+const tabsEl = document.getElementById('tabs');
+const tabAdd = document.getElementById('tabAdd');
+const modelSel = document.getElementById('modelSel');
+const folderBtn = document.getElementById('folderBtn');
+const folderName = document.getElementById('folderName');
+const toast = document.getElementById('toast');
 
 let mode = 'build';
 let busy = false;
+let sessionsData = [];
+let currentSid = '';
+let cwdStr = '';
 
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add('on');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('on'), 2600);
+}
+
+/* ---------- mode ---------- */
 function setMode(m) {
   mode = m;
   modeEl.classList.toggle('plan', m === 'plan');
@@ -656,6 +807,269 @@ function autosize() {
 }
 input.addEventListener('input', autosize);
 
+/* ---------- sessions ---------- */
+function textOf(m) {
+  const c = m.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) {
+    return c.filter(p => p && p.type === 'text').map(p => p.text || '').join('\n');
+  }
+  return '';
+}
+
+function renderMessages(msgs) {
+  stream.innerHTML = '';
+  if (!msgs || !msgs.length) {
+    hero && (hero.style.display = '');
+    scrollDown();
+    return;
+  }
+  for (const m of msgs) {
+    if (m.role === 'user') {
+      const t = textOf(m);
+      if (t) addMsg('user', 'вы', t);
+    } else if (m.role === 'assistant' && !m.tool_calls) {
+      const t = textOf(m);
+      if (t) addMsg('ai', 'screenmate', t);
+    }
+  }
+  scrollDown();
+}
+
+function renderTabs() {
+  const open = sessionsData.filter(s => !s.closed);
+  tabsEl.innerHTML = '';
+  for (const s of open) {
+    const t = document.createElement('button');
+    t.className = 'tab' + (s.id === currentSid ? ' active' : ' inactive');
+    t.title = s.name;
+    const nm = document.createElement('span');
+    nm.className = 'tname';
+    nm.textContent = s.name;
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '×';
+    x.title = 'Закрыть сессию';
+    x.addEventListener('click', ev => { ev.stopPropagation(); closeSession(s.id); });
+    t.appendChild(nm);
+    t.appendChild(x);
+    t.addEventListener('click', () => { if (s.id !== currentSid) selectSession(s.id); });
+    tabsEl.appendChild(t);
+  }
+  tabsEl.appendChild(tabAdd);
+}
+
+async function loadSessions(renderView) {
+  try {
+    const j = await (await fetch('/sessions')).json();
+    sessionsData = j.sessions || [];
+    currentSid = j.current || '';
+    if (j.cwd) { cwdStr = j.cwd; updateFolderLabel(); }
+    renderTabs();
+    if (renderView) renderMessages(j.messages);
+  } catch (e) {
+    showToast('сессии: ' + e);
+  }
+}
+
+async function refreshTabs() {
+  try {
+    const j = await (await fetch('/sessions')).json();
+    const prev = currentSid;
+    sessionsData = j.sessions || [];
+    currentSid = j.current || '';
+    if (currentSid !== prev) {
+      renderMessages(j.messages);
+    }
+    renderTabs();
+  } catch (e) { /* ignore */ }
+}
+
+async function selectSession(id) {
+  if (busy) return;
+  try {
+    const r = await fetch('/sessions/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    currentSid = j.current;
+    renderMessages(j.messages);
+    renderTabs();
+  } catch (e) {
+    showToast('сессия: ' + e);
+  }
+}
+
+async function closeSession(id) {
+  if (busy) return;
+  try {
+    const r = await fetch('/sessions/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    await loadSessions(j.current !== currentSid);
+  } catch (e) {
+    showToast('закрыть: ' + e);
+  }
+}
+
+tabAdd.addEventListener('click', async () => {
+  if (busy) return;
+  try {
+    await fetch('/sessions/new', { method: 'POST' });
+    await loadSessions(true);
+  } catch (e) {
+    showToast('новая: ' + e);
+  }
+});
+
+/* ---------- models ---------- */
+async function loadModels() {
+  modelSel.innerHTML = '<option value="">загрузка…</option>';
+  try {
+    const j = await (await fetch('/models')).json();
+    modelSel.innerHTML = '';
+    const list = j.models || [];
+    const cur = j.current || '';
+    if (list.length) {
+      for (const id of list) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = id;
+        modelSel.appendChild(o);
+      }
+      if (cur && !list.includes(cur)) {
+        const o = document.createElement('option');
+        o.value = cur;
+        o.textContent = cur + ' (текущая)';
+        modelSel.appendChild(o);
+      }
+      modelSel.value = cur || list[0];
+    } else {
+      const o = document.createElement('option');
+      o.value = cur || 'default';
+      o.textContent = (cur || 'default') + (j.error ? ' — ' + j.error : '');
+      modelSel.appendChild(o);
+      modelSel.value = o.value;
+    }
+  } catch (e) {
+    modelSel.innerHTML = '';
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = 'ошибка загрузки';
+    modelSel.appendChild(o);
+  }
+}
+
+modelSel.addEventListener('change', async () => {
+  const v = modelSel.value;
+  if (!v) return;
+  try {
+    const r = await fetch('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: v })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    showToast('модель: ' + v);
+  } catch (e) {
+    showToast('модель: ' + e);
+    loadModels();
+  }
+});
+
+/* ---------- folder ---------- */
+function baseName(p) {
+  if (!p) return '';
+  const parts = p.split(/[\\/]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : p;
+}
+function updateFolderLabel() {
+  folderName.textContent = baseName(cwdStr) || cwdStr || 'папка';
+  folderBtn.title = cwdStr || 'Папка проекта';
+}
+
+const folderOverlay = document.getElementById('folderOverlay');
+const fbPath = document.getElementById('fbPath');
+const fbInput = document.getElementById('fbInput');
+const fbList = document.getElementById('fbList');
+let fbCur = '';
+
+async function fbBrowse(p) {
+  try {
+    const r = await fetch('/dirs?path=' + encodeURIComponent(p || ''));
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    fbCur = j.path;
+    fbPath.textContent = fbCur;
+    fbInput.value = fbCur;
+    fbList.innerHTML = '';
+    if (j.parent) {
+      const row = document.createElement('div');
+      row.className = 'fbrow';
+      row.innerHTML = '<span class="ic">↑</span><span>..</span>';
+      row.addEventListener('click', () => fbBrowse(j.parent));
+      fbList.appendChild(row);
+    }
+    for (const d of (j.dirs || [])) {
+      const row = document.createElement('div');
+      row.className = 'fbrow';
+      const ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.textContent = '▸';
+      const nm = document.createElement('span');
+      nm.textContent = d.name;
+      row.appendChild(ic);
+      row.appendChild(nm);
+      row.addEventListener('click', () => fbBrowse(d.path));
+      fbList.appendChild(row);
+    }
+    if (!(j.dirs || []).length && !j.parent) {
+      const row = document.createElement('div');
+      row.className = 'fbrow';
+      row.textContent = '(нет подпапок)';
+      fbList.appendChild(row);
+    }
+  } catch (e) {
+    showToast('папки: ' + e);
+  }
+}
+
+folderBtn.addEventListener('click', () => {
+  folderOverlay.classList.add('on');
+  fbBrowse(cwdStr || '.');
+});
+document.getElementById('fbCancel').addEventListener('click', () => folderOverlay.classList.remove('on'));
+folderOverlay.addEventListener('click', e => { if (e.target === folderOverlay) folderOverlay.classList.remove('on'); });
+fbInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); fbBrowse(fbInput.value.trim()); }
+});
+document.getElementById('fbOk').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/cwd', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: fbCur })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    cwdStr = j.path;
+    updateFolderLabel();
+    folderOverlay.classList.remove('on');
+    showToast('папка: ' + baseName(cwdStr));
+  } catch (e) {
+    showToast('папка: ' + e);
+  }
+});
+
+/* ---------- chat ---------- */
 async function send() {
   const text = input.value.trim();
   if (!text || busy) return;
@@ -665,7 +1079,6 @@ async function send() {
 
   busy = true;
   sendBtn.disabled = true;
-  busyHint.textContent = 'работаю…';
   const typing = addTyping();
   setStatus('соединение…');
 
@@ -737,7 +1150,7 @@ async function send() {
     setStatus('');
     busy = false;
     sendBtn.disabled = false;
-    busyHint.textContent = '';
+    refreshTabs();
     scrollDown();
     input.focus();
   }
@@ -781,22 +1194,13 @@ const overlay = document.getElementById('settingsOverlay');
 const setProvider = document.getElementById('setProvider');
 const setKey = document.getElementById('setKey');
 const keyState = document.getElementById('keyState');
-const setModel = document.getElementById('setModel');
-const modelDefault = document.getElementById('modelDefault');
-const setPrompt = document.getElementById('setPrompt');
-const setCustomUrl = document.getElementById('setCustomUrl');
 const customUrlField = document.getElementById('customUrlField');
+const setCustomUrl = document.getElementById('setCustomUrl');
 const provStyle = document.getElementById('provStyle');
 const cfgPath = document.getElementById('cfgPath');
-const toast = document.getElementById('toast');
+const histField = document.getElementById('histField');
+const histList = document.getElementById('histList');
 let providers = [];
-
-function showToast(text) {
-  toast.textContent = text;
-  toast.classList.add('on');
-  clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => toast.classList.remove('on'), 2600);
-}
 
 function currentProv() {
   return providers.find(p => p.id === setProvider.value) || providers[0];
@@ -810,35 +1214,92 @@ function refreshProviderFields() {
     ? 'Ключ сохранён: ••••' + p.key_tail + ' (оставь поле пустым, чтобы не менять)'
     : 'Ключ не задан — введи его';
   setKey.placeholder = p.has_key ? '••••' + p.key_tail : 'вставь API-ключ…';
-  modelDefault.textContent = p.current_model
-    ? 'Текущая: ' + p.current_model
-    : 'По умолчанию: ' + p.default_model;
-  setModel.placeholder = p.default_model || 'model-id';
   customUrlField.style.display = p.id === 'custom' ? '' : 'none';
+}
+
+function renderHistory() {
+  const closed = sessionsData.filter(s => s.closed);
+  histField.style.display = closed.length ? '' : 'none';
+  histList.innerHTML = '';
+  if (!closed.length) return;
+  for (const s of closed) {
+    const row = document.createElement('div');
+    row.className = 'histrow';
+    const nm = document.createElement('span');
+    nm.className = 'hname';
+    nm.textContent = s.name;
+    nm.title = s.name;
+    const dt = document.createElement('span');
+    dt.className = 'hdate';
+    dt.textContent = s.updated ? new Date(s.updated * 1000).toLocaleDateString('ru') : '';
+    const resume = document.createElement('button');
+    resume.textContent = 'возобновить';
+    resume.addEventListener('click', async () => {
+      try {
+        const r = await fetch('/sessions/resume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: s.id })
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+        currentSid = j.current;
+        renderMessages(j.messages);
+        overlay.classList.remove('on');
+        await loadSessions(false);
+        showToast('сессия возобновлена');
+      } catch (e) {
+        showToast('возобновить: ' + e);
+      }
+    });
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = 'удалить';
+    del.addEventListener('click', async () => {
+      try {
+        await fetch('/sessions/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: s.id })
+        });
+        await loadSessions(false);
+        renderHistory();
+      } catch (e) {
+        showToast('удалить: ' + e);
+      }
+    });
+    row.appendChild(nm);
+    row.appendChild(dt);
+    row.appendChild(resume);
+    row.appendChild(del);
+    histList.appendChild(row);
+  }
 }
 
 async function openSettings() {
   try {
-    const r = await fetch('/settings');
-    const s = await r.json();
+    const [sr, hr] = await Promise.all([fetch('/settings'), fetch('/sessions')]);
+    const s = await sr.json();
+    const h = await hr.json();
     providers = s.providers || [];
+    sessionsData = h.sessions || [];
     cfgPath.textContent = s.config_path || '';
     setProvider.innerHTML = '';
     for (const p of providers) {
       const o = document.createElement('option');
       o.value = p.id;
-      o.textContent = p.label + (p.has_key ? ' ✓' : '');
+      o.textContent = p.label;
       if (p.id === s.provider) o.selected = true;
       setProvider.appendChild(o);
     }
-    setPrompt.value = s.system_prompt || '';
     setCustomUrl.value = s.custom_base_url || '';
     setKey.value = '';
     refreshProviderFields();
+    renderHistory();
     overlay.classList.add('on');
     setTimeout(() => setKey.focus(), 60);
   } catch (e) {
-    showToast('Не удалось загрузить настройки: ' + e);
+    showToast('настройки: ' + e);
   }
 }
 
@@ -856,9 +1317,7 @@ document.getElementById('setSave').addEventListener('click', async () => {
   const body = {
     provider: setProvider.value,
     api_key: setKey.value.trim(),
-    model: setModel.value.trim(),
-    custom_base_url: setCustomUrl.value.trim(),
-    system_prompt: setPrompt.value
+    custom_base_url: setCustomUrl.value.trim()
   };
   try {
     const r = await fetch('/settings', {
@@ -871,12 +1330,16 @@ document.getElementById('setSave').addEventListener('click', async () => {
     banner.classList.remove('on');
     closeSettings();
     showToast('✓ сохранено — ' + (j.provider || ''));
+    loadModels();
   } catch (e) {
     showToast('Ошибка: ' + e);
   }
 });
 
+/* ---------- init ---------- */
 setMode('build');
+loadSessions(true);
+loadModels();
 input.focus();
 </script>
 </body>
@@ -912,6 +1375,148 @@ static std::string sse_event(const std::string& type, const std::string& text_ke
         payload += ",\"" + text_key + "\":\"" + json_escape(text) + "\"";
     payload += "}\n\n";
     return "data: " + payload;
+}
+
+static std::string url_decode(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '%' && i + 2 < s.size()) {
+            auto hex = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            int hi = hex(s[i + 1]), lo = hex(s[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out.push_back((char)(hi * 16 + lo));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(s[i] == '+' ? ' ' : s[i]);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// sessions (tabs) — persisted to config_dir/sessions.json
+// ---------------------------------------------------------------------------
+
+struct Session {
+    std::string id;
+    std::string name;
+    bool closed = false;
+    long long updated = 0;
+    std::vector<json> messages;
+};
+
+static fs::path sessions_file() { return Config::config_dir() / "sessions.json"; }
+
+static long long now_sec() {
+    return (long long)time(nullptr);
+}
+
+static std::string sess_title_from(const std::string& msg) {
+    std::string t;
+    for (char ch : msg) {
+        if (ch == '\n' || ch == '\r') ch = ' ';
+        t.push_back(ch);
+        if ((int)t.size() >= 42) break;
+    }
+    if (t.size() >= 42) t += "…";
+    return t.empty() ? "новая сессия" : t;
+}
+
+static void load_sessions(std::vector<Session>& out, std::string& current) {
+    out.clear();
+    current.clear();
+    try {
+        std::ifstream in(sessions_file());
+        if (in) {
+            json j;
+            in >> j;
+            current = j.value("current", "");
+            for (auto& s : j.value("sessions", json::array())) {
+                Session ss;
+                ss.id = s.value("id", "");
+                ss.name = s.value("name", "сессия");
+                ss.closed = s.value("closed", false);
+                ss.updated = s.value("updated", 0);
+                if (s.contains("messages") && s["messages"].is_array())
+                    ss.messages = s["messages"].get<std::vector<json>>();
+                if (!ss.id.empty()) out.push_back(std::move(ss));
+            }
+        }
+    } catch (...) {
+        out.clear();
+    }
+}
+
+static void save_sessions(const std::vector<Session>& sessions, const std::string& current) {
+    try {
+        std::error_code ec;
+        fs::create_directories(Config::config_dir(), ec);
+        json arr = json::array();
+        for (auto& s : sessions) {
+            arr.push_back({{"id", s.id},
+                           {"name", s.name},
+                           {"closed", s.closed},
+                           {"updated", s.updated},
+                           {"messages", s.messages}});
+        }
+        json j = {{"current", current}, {"sessions", arr}};
+        std::ofstream out(sessions_file(), std::ios::trunc);
+        out << j.dump();
+    } catch (...) {
+    }
+}
+
+// fetch model catalogue for a provider (JSON array of ids)
+static json fetch_model_list(const Config& c) {
+    json out = json::array();
+    std::map<std::string, std::string> hdrs;
+    std::string st = c.style();
+    std::string body;
+    if (st == "anthropic") {
+        if (!c.api_key().empty()) {
+            hdrs["x-api-key"] = c.api_key();
+            hdrs["anthropic-version"] = "2023-06-01";
+        }
+        body = http_get("https://api.anthropic.com/v1/models", hdrs, 20);
+    } else if (st == "gemini") {
+        if (!c.api_key().empty()) hdrs["x-goog-api-key"] = c.api_key();
+        body = http_get(c.base_url() + "/models", hdrs, 20);
+    } else {
+        if (!c.api_key().empty()) hdrs["Authorization"] = "Bearer " + c.api_key();
+        body = http_get(c.base_url() + "/models", hdrs, 20);
+    }
+    json j = json::parse(body);
+    json arr = j.value("data", json::array());
+    if (arr.empty()) arr = j.value("models", json::array());
+    for (auto& m : arr) {
+        std::string id = m.value("id", m.value("name", ""));
+        if (id.empty()) continue;
+        if (id.rfind("models/", 0) == 0) id = id.substr(7);
+        if (st == "openai" && c.provider == "openrouter") {
+            auto arch = m.value("architecture", json::object());
+            auto mods = arch.value("input_modalities", json::array());
+            bool has_img = false;
+            for (auto& x : mods)
+                if (x.is_string() && x.get<std::string>() == "image") has_img = true;
+            if (!has_img || id.find(":free") == std::string::npos) continue;
+        } else if (st == "openai" && c.provider == "nvidia") {
+            std::string low = to_lower(id);
+            if (low.find("vl") == std::string::npos && low.find("vision") == std::string::npos &&
+                low.find("omni") == std::string::npos &&
+                low.find("multimodal") == std::string::npos)
+                continue;
+        }
+        out.push_back(id);
+        if ((int)out.size() >= 300) break;
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -957,8 +1562,36 @@ int gui_run(int port) {
     ToolContext base_ctx;
     base_ctx.cfg = &cfg;
     base_ctx.cwd = fs::current_path();
-    std::vector<json> history;
     std::mutex mu;
+
+    // sessions: [0..] tabs; closed ones live in history
+    std::vector<Session> sessions;
+    std::string current_sid;
+    load_sessions(sessions, current_sid);
+    auto find_sess = [&](const std::string& id) -> Session* {
+        for (auto& s : sessions)
+            if (s.id == id) return &s;
+        return nullptr;
+    };
+    auto ensure_current = [&]() {
+        Session* cur = current_sid.empty() ? nullptr : find_sess(current_sid);
+        if (cur && !cur->closed) return cur;
+        for (auto& s : sessions)
+            if (!s.closed) {
+                current_sid = s.id;
+                return &s;
+            }
+        // create first session
+        Session s;
+        s.id = "s" + std::to_string(now_sec()) + "x" + std::to_string(sessions.size());
+        s.name = "новая сессия";
+        s.updated = now_sec();
+        sessions.push_back(std::move(s));
+        current_sid = sessions.back().id;
+        return &sessions.back();
+    };
+    ensure_current();
+    save_sessions(sessions, current_sid);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/";
     std::cout << "ScreenMate GUI: " << url << "\n";
@@ -1056,10 +1689,10 @@ int gui_run(int port) {
             }
             json j = {{"provider", cfg.provider},
                       {"providers", provs},
-                      {"system_prompt", cfg.system_prompt},
                       {"custom_base_url", cfg.custom_base_url},
                       {"config_path", Config::config_file().string()},
-                      {"attach_screenshot", cfg.attach_screenshot}};
+                      {"attach_screenshot", cfg.attach_screenshot},
+                      {"cwd", base_ctx.cwd.string()}};
             respond_json(200, j.dump());
             closesocket(c);
             continue;
@@ -1091,10 +1724,6 @@ int gui_run(int port) {
                             while (!u.empty() && u.back() == '/') u.pop_back();
                             cfg.custom_base_url = u;
                         }
-                        if (j.contains("system_prompt")) {
-                            std::string p = j["system_prompt"].get<std::string>();
-                            if (!p.empty()) cfg.system_prompt = p;
-                        }
                         if (j.contains("attach_screenshot"))
                             cfg.attach_screenshot = j["attach_screenshot"].get<bool>();
                         cfg.save();
@@ -1118,8 +1747,221 @@ int gui_run(int port) {
 
         if (method == "POST" && path == "/clear") {
             std::lock_guard<std::mutex> lock(mu);
-            history.clear();
+            if (Session* cur = ensure_current()) cur->messages.clear();
+            save_sessions(sessions, current_sid);
             respond_json(200, "{\"ok\":true}");
+            closesocket(c);
+            continue;
+        }
+
+        // ---------- sessions ----------
+        if (method == "GET" && path == "/sessions") {
+            std::lock_guard<std::mutex> lock(mu);
+            ensure_current();
+            json arr = json::array();
+            for (auto& s : sessions)
+                arr.push_back({{"id", s.id},
+                               {"name", s.name},
+                               {"closed", s.closed},
+                               {"updated", s.updated},
+                               {"current", s.id == current_sid}});
+            Session* cur = find_sess(current_sid);
+            json j = {{"sessions", arr},
+                      {"current", current_sid},
+                      {"messages", cur ? json(cur->messages) : json::array()},
+                      {"cwd", base_ctx.cwd.string()}};
+            respond_json(200, j.dump());
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/sessions/new") {
+            std::lock_guard<std::mutex> lock(mu);
+            Session s;
+            s.id = "s" + std::to_string(now_sec()) + "x" + std::to_string(sessions.size());
+            s.name = "новая сессия";
+            s.updated = now_sec();
+            sessions.push_back(std::move(s));
+            current_sid = sessions.back().id;
+            save_sessions(sessions, current_sid);
+            respond_json(200, json({{"ok", true}, {"current", current_sid}}).dump());
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/sessions/select") {
+            std::string err, id;
+            json messages = json::array();
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    id = json::parse(body.empty() ? "{}" : body).value("id", "");
+                } catch (...) {
+                }
+                Session* s = id.empty() ? nullptr : find_sess(id);
+                if (!s || s->closed) err = "session not found";
+                else {
+                    current_sid = s->id;
+                    messages = s->messages;
+                    save_sessions(sessions, current_sid);
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200, json({{"ok", true}, {"current", id}, {"messages", messages}}).dump());
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/sessions/close") {
+            std::string err, new_cur;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    std::string id = json::parse(body.empty() ? "{}" : body).value("id", "");
+                    Session* s = id.empty() ? nullptr : find_sess(id);
+                    if (!s) err = "session not found";
+                    else {
+                        s->closed = true;
+                        s->updated = now_sec();
+                        ensure_current();  // switches away if needed
+                        new_cur = current_sid;
+                        save_sessions(sessions, current_sid);
+                    }
+                } catch (const std::exception& e) {
+                    err = e.what();
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200, json({{"ok", true}, {"current", new_cur}}).dump());
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/sessions/resume") {
+            std::string err, id;
+            json messages = json::array();
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    id = json::parse(body.empty() ? "{}" : body).value("id", "");
+                } catch (...) {
+                }
+                Session* s = id.empty() ? nullptr : find_sess(id);
+                if (!s) err = "session not found";
+                else {
+                    s->closed = false;
+                    s->updated = now_sec();
+                    current_sid = s->id;
+                    messages = s->messages;
+                    save_sessions(sessions, current_sid);
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200, json({{"ok", true}, {"current", id}, {"messages", messages}}).dump());
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/sessions/delete") {
+            std::string err;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    std::string id = json::parse(body.empty() ? "{}" : body).value("id", "");
+                    sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
+                                                  [&](const Session& s) { return s.id == id; }),
+                                   sessions.end());
+                    ensure_current();
+                    save_sessions(sessions, current_sid);
+                } catch (const std::exception& e) {
+                    err = e.what();
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200, "{\"ok\":true}");
+            closesocket(c);
+            continue;
+        }
+
+        // ---------- project folder ----------
+        if (method == "GET" && path.rfind("/dirs", 0) == 0) {
+            std::string start = ".";
+            auto qp = path.find("path=");
+            if (qp != std::string::npos) start = url_decode(path.substr(qp + 5));
+            json dirs = json::array();
+            std::string err;
+            try {
+                fs::path p(start.empty() ? "." : start);
+                std::error_code ec;
+                if (!fs::is_directory(p, ec)) throw std::runtime_error("не папка: " + start);
+                p = fs::weakly_canonical(p, ec);
+                if (ec) p = fs::absolute(p);
+                for (auto& e : fs::directory_iterator(p)) {
+                    if (!e.is_directory()) continue;
+                    std::string name = e.path().filename().string();
+                    if (name.empty()) continue;
+                    dirs.push_back({{"name", name}, {"path", e.path().string()}});
+                }
+                std::sort(dirs.begin(), dirs.end(), [](const json& a, const json& b) {
+                    return to_lower(a.value("name", "")) < to_lower(b.value("name", ""));
+                });
+                fs::path parent = p.parent_path();
+                respond_json(200,
+                             json({{"ok", true},
+                                   {"path", p.string()},
+                                   {"parent", parent == p ? "" : parent.string()},
+                                   {"dirs", dirs}})
+                                 .dump());
+            } catch (const std::exception& e) {
+                respond_json(400, json({{"error", e.what()}}).dump());
+            }
+            closesocket(c);
+            continue;
+        }
+        if (method == "POST" && path == "/cwd") {
+            std::string err, pth;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    pth = json::parse(body.empty() ? "{}" : body).value("path", "");
+                    std::error_code ec;
+                    if (pth.empty() || !fs::is_directory(pth, ec))
+                        throw std::runtime_error("не папка: " + pth);
+                    base_ctx.cwd = fs::weakly_canonical(pth, ec);
+                    if (ec) base_ctx.cwd = fs::absolute(pth);
+                } catch (const std::exception& e) {
+                    err = e.what();
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200, json({{"ok", true}, {"path", base_ctx.cwd.string()}}).dump());
+            closesocket(c);
+            continue;
+        }
+
+        // ---------- model catalogue ----------
+        if (method == "GET" && path == "/models") {
+            Config snap;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                snap = cfg;
+            }
+            json resp = {{"provider", snap.provider}, {"current", snap.model()}};
+            if (snap.api_key().empty()) {
+                resp["error"] = "нет API-ключа";
+            } else {
+                try {
+                    resp["models"] = fetch_model_list(snap);
+                } catch (const std::exception& e) {
+                    resp["error"] = e.what();
+                }
+            }
+            respond_json(200, resp.dump());
             closesocket(c);
             continue;
         }
@@ -1158,6 +2000,10 @@ int gui_run(int port) {
             }
 
             std::lock_guard<std::mutex> lock(mu);
+            Session* cur = ensure_current();
+            if (cur->messages.empty() || cur->name == "новая сессия") {
+                if (cur->messages.empty()) cur->name = sess_title_from(message);
+            }
             ToolContext ctx = base_ctx;
             ctx.mode = (mode == "plan") ? AgentMode::Plan : AgentMode::Build;
 
@@ -1174,11 +2020,13 @@ int gui_run(int port) {
 
             std::string reply, err;
             try {
-                reply = agent_turn(cfg, ctx, history, message, cb,
+                reply = agent_turn(cfg, ctx, cur->messages, message, cb,
                                    ctx.mode == AgentMode::Plan ? "plan" : "build");
             } catch (const std::exception& e) {
                 err = e.what();
             }
+            cur->updated = now_sec();
+            save_sessions(sessions, current_sid);
             send_all(c, sse_event("status", "text", ""));
             if (!err.empty()) send_all(c, sse_event("error", "text", err));
             send_all(c, sse_event("done", "text", reply));

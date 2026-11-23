@@ -445,9 +445,8 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
     std::string mode_sys =
         "Режим агента: " + mode_label + ". " +
         (ctx.mode == AgentMode::Plan
-             ? "PLAN — только чтение и анализ: write_file/edit_file/shell/cursor запрещены."
-             : "BUILD — полный доступ: правка файлов, shell, мышь и клавиатура "
-               "(cursor: MOVE/CLICK/DRAG/SCROLL/KEY/TYPE).");
+             ? "PLAN — только чтение и анализ: write_file/edit_file/shell запрещены."
+             : "BUILD — полный доступ: правка файлов и shell.");
 
     std::string style = cfg.style();
     std::string sys = cfg.system_prompt + "\n\n" + mode_sys;
@@ -575,12 +574,6 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
         final_text = acc.text;
         json assistant = {{"role", "assistant"}, {"content", final_text}};
         history.push_back(assistant);
-        if (ctx.mode == AgentMode::Build) {
-            auto cmds = run_bracket_commands(final_text, ctx);
-            if (!cmds.empty() && cb.on_status) {
-                for (auto& c : cmds) cb.on_status("• " + c);
-            }
-        }
         if (cfg.history_limit > 0 && (int)history.size() > cfg.history_limit * 2) {
             size_t drop = history.size() - (size_t)cfg.history_limit * 2;
             history.erase(history.begin(), history.begin() + drop);

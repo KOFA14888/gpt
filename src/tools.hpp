@@ -1,5 +1,5 @@
 #pragma once
-// Tool registry for the coding agent: files, shell, search, screen, cursor, LSP.
+// Tool registry for the coding agent: files, shell, search, screen, LSP.
 
 #include <map>
 #include <string>
@@ -27,8 +27,5 @@ nlohmann::json tool_schemas(AgentMode mode);
 // Execute a tool call. Returns {"ok":bool,"content":string,"image_b64":optional}
 nlohmann::json run_tool(ToolContext& ctx, const std::string& name,
                         const nlohmann::json& args);
-
-// Extract cursor commands from free text (legacy [MOVE x y] protocol) and run them.
-std::vector<std::string> run_bracket_commands(const std::string& text, ToolContext& ctx);
 
 }  // namespace sm
