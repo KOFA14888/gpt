@@ -170,7 +170,10 @@ bool LspServer::start(const std::string& command, std::string* error) {
     }
 
 #ifdef _WIN32
-    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE, 0};
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.lpSecurityDescriptor = nullptr;
+    sa.bInheritHandle = TRUE;
     HANDLE in_r = nullptr, out_w = nullptr;
     if (!CreatePipe(&in_r, &impl_->stdin_w, &sa, 0) ||
         !CreatePipe(&impl_->stdout_r, &out_w, &sa, 0)) {
