@@ -328,14 +328,21 @@ static json tool_cursor(ToolContext& ctx, const json& args) {
                    [](unsigned char c) { return (char)std::toupper(c); });
     a.x = args.value("x", 0);
     a.y = args.value("y", 0);
-    a.text = args.value("text", "");
-    // clamp to screen / region
-    if (ctx.cfg && ctx.cfg->region.size() == 4) {
-        int rx = ctx.cfg->region[0], ry = ctx.cfg->region[1];
-        int rw = ctx.cfg->region[2], rh = ctx.cfg->region[3];
-        a.x = std::clamp(a.x, rx, rx + rw - 1);
-        a.y = std::clamp(a.y, ry, ry + rh - 1);
-    }
+    a.x2 = args.value("x2", args.value("end_x", 0));
+    a.y2 = args.value("y2", args.value("end_y", 0));
+    a.dx = args.value("dx", args.value("notches", 0));
+    a.dy = args.value("dy", 0);
+    a.text = args.value("text", args.value("key", ""));
+    auto clamp_pt = [&](int& x, int& y) {
+        if (ctx.cfg && ctx.cfg->region.size() == 4) {
+            int rx = ctx.cfg->region[0], ry = ctx.cfg->region[1];
+            int rw = ctx.cfg->region[2], rh = ctx.cfg->region[3];
+            x = std::clamp(x, rx, rx + rw - 1);
+            y = std::clamp(y, ry, ry + rh - 1);
+        }
+    };
+    clamp_pt(a.x, a.y);
+    clamp_pt(a.x2, a.y2);
     return ok(cursor_perform(a));
 }
 
@@ -425,12 +432,22 @@ nlohmann::json tool_schemas(AgentMode mode) {
             json{{prop("command", "string", "command line")},
                  {"timeout", {{"type", "integer"}, {"description", "seconds, default 60"}}}},
             {"command"});
-        add("cursor", "Move/click the AI cursor on screen or type text.",
+        add("cursor",
+            "Drive the real mouse/keyboard on the user's screen. "
+            "Workflow: screenshot → find target pixels → act → screenshot to verify. "
+            "Actions: MOVE/HOVER(x,y); CLICK/RIGHT_CLICK/MIDDLE_CLICK/DOUBLE_CLICK(x,y); "
+            "DRAG(x,y to x2,y2); SCROLL(x,y,dx notches, +up/−down); "
+            "KEY(text=enter|ctrl+s|f5…); TYPE(text); POS(). "
+            "After MOVE the pointer stays there (hover works). Absolute screen pixels.",
             json{{prop("action", "string",
-                       "MOVE | CLICK | RIGHT_CLICK | DOUBLE_CLICK | TYPE")},
-                 {"x", {{"type", "integer"}, {"description", "screen x"}}},
+                       "MOVE | HOVER | CLICK | RIGHT_CLICK | MIDDLE_CLICK | "
+                       "DOUBLE_CLICK | DRAG | SCROLL | KEY | TYPE | POS")},
+                 {"x", {{"type", "integer"}, {"description", "screen x (DRAG start, SCROLL anchor)"}}},
                  {"y", {{"type", "integer"}, {"description", "screen y"}}},
-                 {"text", {{"type", "string"}, {"description", "for TYPE"}}}},
+                 {"x2", {{"type", "integer"}, {"description", "DRAG end x"}}},
+                 {"y2", {{"type", "integer"}, {"description", "DRAG end y"}}},
+                 {"dx", {{"type", "integer"}, {"description", "SCROLL notches (+up, −down)"}}},
+                 {"text", {{"type", "string"}, {"description", "TYPE text or KEY name (enter, ctrl+s, esc…)"}}}},
             {"action"});
     }
     return schemas;
@@ -460,7 +477,7 @@ nlohmann::json run_tool(ToolContext& ctx, const std::string& name, const nlohman
 std::vector<std::string> run_bracket_commands(const std::string& text, ToolContext& ctx) {
     // [MOVE x y] / [CLICK x y] / [RIGHT_CLICK x y] / [DOUBLE_CLICK x y] / [TYPE ...]
     static const std::regex re(
-        R"(\[\s*(MOVE|CLICK|RIGHT_CLICK|DOUBLE_CLICK|TYPE)\s+([^\]]*)\])",
+        R"(\[\s*(MOVE|HOVER|CLICK|RIGHT_CLICK|MIDDLE_CLICK|DOUBLE_CLICK|DRAG|SCROLL|KEY|TYPE|POS)\s*([^\]]*)\])",
         std::regex::icase);
     std::vector<std::string> results;
     auto begin = std::sregex_iterator(text.begin(), text.end(), re);
@@ -471,8 +488,27 @@ std::vector<std::string> run_bracket_commands(const std::string& text, ToolConte
         std::string rest = trim((*it)[2].str());
         CursorAction a;
         a.kind = kind;
-        if (kind == "TYPE") {
+        if (kind == "TYPE" || kind == "KEY") {
             a.text = rest;
+        } else if (kind == "POS") {
+            // no args
+        } else if (kind == "SCROLL") {
+            int x = 0, y = 0, n = 0;
+            if (std::sscanf(rest.c_str(), "%d%*[, ]%d%*[, ]%d", &x, &y, &n) == 3) {
+                a.x = x; a.y = y; a.dx = n;
+            } else if (std::sscanf(rest.c_str(), "%d", &n) == 1) {
+                a.dx = n;
+            } else {
+                continue;
+            }
+        } else if (kind == "DRAG") {
+            int x = 0, y = 0, x2 = 0, y2 = 0;
+            if (std::sscanf(rest.c_str(), "%d%*[, ]%d%*[, ]%d%*[, ]%d",
+                            &x, &y, &x2, &y2) == 4) {
+                a.x = x; a.y = y; a.x2 = x2; a.y2 = y2;
+            } else {
+                continue;
+            }
         } else {
             int x = 0, y = 0;
             if (std::sscanf(rest.c_str(), "%d%*[, ]%d", &x, &y) == 2) {

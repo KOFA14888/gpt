@@ -101,7 +101,8 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
         "Режим агента: " + mode_label + ". " +
         (ctx.mode == AgentMode::Plan
              ? "PLAN — только чтение и анализ: write_file/edit_file/shell/cursor запрещены."
-             : "BUILD — полный доступ: можно править файлы, запускать команды и двигать курсор.");
+             : "BUILD — полный доступ: правка файлов, shell, мышь и клавиатура "
+               "(cursor: MOVE/CLICK/DRAG/SCROLL/KEY/TYPE).");
 
     json tools = tool_schemas(ctx.mode);
     std::string final_text;
