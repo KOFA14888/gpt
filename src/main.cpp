@@ -188,24 +188,9 @@ static int cmd_models() {
         for (auto& m : arr) {
             std::string id = m.value("id", m.value("name", ""));
             if (id.empty()) continue;
-            if (st == "openai" && c.provider == "openrouter") {
-                auto arch = m.value("architecture", json::object());
-                auto mods = arch.value("input_modalities", json::array());
-                bool has_img = false;
-                for (auto& x : mods)
-                    if (x.is_string() && x.get<std::string>() == "image") has_img = true;
-                bool free = id.find(":free") != std::string::npos;
-                if (!has_img || !free) continue;
-            } else if (st == "openai" && c.provider == "nvidia") {
-                std::string low = to_lower(id);
-                if (low.find("vl") == std::string::npos && low.find("vision") == std::string::npos &&
-                    low.find("omni") == std::string::npos &&
-                    low.find("multimodal") == std::string::npos)
-                    continue;
-            }
             if (id.rfind("models/", 0) == 0) id = id.substr(7);
             std::cout << id << "\n";
-            if (++n >= 80) break;
+            if (++n >= 300) break;
         }
         std::cerr << "(" << n << " models — put id into Settings / config.json model field)\n";
     } catch (const std::exception& e) {

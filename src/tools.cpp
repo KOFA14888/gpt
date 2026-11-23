@@ -361,7 +361,7 @@ nlohmann::json tool_schemas(AgentMode mode) {
         for (auto* r : required) req.push_back(r);
         schemas.push_back({{"type", "function"},
                            {"function",
-                            {{name, name},
+                            {{"name", name},
                              {"description", desc},
                              {"parameters", {{"type", "object"}, {"properties", props},
                                              {"required", req}}}}}});

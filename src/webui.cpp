@@ -50,19 +50,19 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
 <title>screenmate — coding agent</title>
 <style>
   :root {
-    --bg: #0a0a0a;
-    --bg-soft: #111111;
-    --surface: #161616;
-    --surface2: #1d1d1d;
-    --border: #262626;
-    --border-strong: #383838;
-    --text: #e5e5e5;
-    --muted: #8b8b8b;
-    --dim: #5c5c5c;
-    --accent: #fab283;
-    --accent-dim: #c4713a;
-    --purple: #9d7cd8;
-    --green: #7fd88f;
+    --bg: #000000;
+    --bg-soft: #0a0a0b;
+    --surface: #101012;
+    --surface2: #17171a;
+    --border: #26262a;
+    --border-strong: #3c3c42;
+    --text: #f5f5f7;
+    --muted: #a0a0a8;
+    --dim: #6a6a72;
+    --accent: #ffffff;
+    --accent-dim: #c8c8d0;
+    --purple: #cfcfd6;
+    --green: #e2e2e8;
     --red: #e06c75;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, "Cascadia Code", monospace;
@@ -77,7 +77,41 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
-  .app { height: 100%; display: flex; flex-direction: column; }
+  /* ---------- galaxy starfield ---------- */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(1.5px 1.5px at 8% 14%, rgba(255,255,255,.9), transparent 50%),
+      radial-gradient(1px 1px at 16% 62%, rgba(255,255,255,.55), transparent 50%),
+      radial-gradient(1.5px 1.5px at 24% 32%, rgba(255,255,255,.75), transparent 50%),
+      radial-gradient(1px 1px at 31% 84%, rgba(255,255,255,.45), transparent 50%),
+      radial-gradient(2px 2px at 38% 8%, rgba(255,255,255,.85), transparent 50%),
+      radial-gradient(1px 1px at 44% 47%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(1.5px 1.5px at 52% 71%, rgba(255,255,255,.7), transparent 50%),
+      radial-gradient(1px 1px at 58% 23%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(2px 2px at 65% 91%, rgba(255,255,255,.8), transparent 50%),
+      radial-gradient(1px 1px at 71% 38%, rgba(255,255,255,.45), transparent 50%),
+      radial-gradient(1.5px 1.5px at 78% 12%, rgba(255,255,255,.75), transparent 50%),
+      radial-gradient(1px 1px at 84% 57%, rgba(255,255,255,.55), transparent 50%),
+      radial-gradient(1.5px 1.5px at 91% 78%, rgba(255,255,255,.65), transparent 50%),
+      radial-gradient(1px 1px at 96% 29%, rgba(255,255,255,.4), transparent 50%),
+      radial-gradient(1px 1px at 5% 88%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(1.5px 1.5px at 12% 41%, rgba(255,255,255,.6), transparent 50%),
+      radial-gradient(1px 1px at 27% 6%, rgba(255,255,255,.45), transparent 50%),
+      radial-gradient(1px 1px at 49% 94%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(1.5px 1.5px at 62% 52%, rgba(255,255,255,.65), transparent 50%),
+      radial-gradient(1px 1px at 88% 6%, rgba(255,255,255,.5), transparent 50%),
+      radial-gradient(900px 520px at 75% -12%, rgba(255,255,255,.055), transparent 70%),
+      radial-gradient(760px 460px at 5% 108%, rgba(255,255,255,.045), transparent 70%),
+      radial-gradient(1100px 700px at 45% 45%, rgba(255,255,255,.02), transparent 75%);
+    animation: twinkle 7s ease-in-out infinite alternate;
+  }
+  @keyframes twinkle { from { opacity: .82; } to { opacity: 1; } }
+  .app { height: 100%; display: flex; flex-direction: column; position: relative; z-index: 1; }
 
   /* ---------- header ---------- */
   header {
@@ -89,7 +123,10 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     padding: 0 20px;
     height: 50px;
     border-bottom: 1px solid var(--border);
-    background: var(--bg);
+    background: rgba(0, 0, 0, .72);
+    backdrop-filter: blur(8px);
+    position: relative;
+    z-index: 30;
   }
   .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
   .brand h1 {
@@ -127,80 +164,102 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     transition: color .15s ease, background .15s ease;
   }
   .mode button:hover { color: var(--text); }
-  .mode button.active { background: var(--surface2); }
-  .mode button[data-mode="build"].active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
-  .mode button[data-mode="plan"].active { color: var(--green); box-shadow: inset 0 -2px 0 var(--green); }
+  .mode button.active { background: var(--surface2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 
   .iconbtn {
-    width: 30px; height: 30px;
-    display: grid; place-items: center;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
     background: transparent;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--muted);
+    font: 12px var(--mono);
     cursor: pointer;
     transition: color .15s ease, border-color .15s ease;
   }
-  .iconbtn:hover { color: var(--text); border-color: var(--border-strong); }
-  .iconbtn svg { width: 15px; height: 15px; }
+  .iconbtn:hover, .iconbtn.on { color: var(--text); border-color: var(--border-strong); }
+  .iconbtn svg { width: 14px; height: 14px; flex: none; }
+  .iconbtn.sq { width: 30px; padding: 0; justify-content: center; }
 
-  /* ---------- session tabs ---------- */
-  .tabs {
-    flex: none;
-    display: flex;
-    gap: 6px;
-    padding: 8px 20px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    overflow-x: auto;
-    scrollbar-width: none;
+  /* ---------- sessions dropdown ---------- */
+  .sesswrap { position: relative; }
+  .sesspanel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 320px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--bg-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 10px;
+    display: none;
+    z-index: 60;
+    animation: fadeIn .14s ease both;
   }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab {
+  .sesspanel.on { display: block; }
+  .sesspanel .newsess {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: 12.5px var(--mono);
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: border-color .15s ease;
+  }
+  .sesspanel .newsess:hover { border-color: var(--border-strong); }
+  .srow {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--bg-soft);
-    border: 1px solid var(--border);
+    padding: 7px 9px;
     border-radius: var(--radius);
-    padding: 5px 10px;
     font: 12.5px var(--mono);
     color: var(--muted);
     cursor: pointer;
-    white-space: nowrap;
-    max-width: 230px;
-    flex: none;
-    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    transition: background .1s ease, color .1s ease;
   }
-  .tab:hover { color: var(--text); border-color: var(--border-strong); }
-  .tab.active {
-    color: var(--text);
-    background: var(--surface2);
-    border-color: var(--border-strong);
-    box-shadow: inset 0 -2px 0 var(--accent);
-  }
-  .tab.inactive { opacity: .6; }
-  .tab .tname { overflow: hidden; text-overflow: ellipsis; }
-  .tab .x {
+  .srow:hover { background: var(--surface); color: var(--text); }
+  .srow.active { color: var(--text); background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+  .srow .sname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow .sx {
     color: var(--dim);
     font-size: 14px;
     line-height: 1;
-    padding: 0 2px;
+    padding: 0 3px;
     border-radius: 3px;
-  }
-  .tab .x:hover { color: var(--red); background: rgba(224,108,117,.12); }
-  .tab-add {
     flex: none;
-    background: transparent;
-    border: 1px dashed var(--border);
-    border-radius: var(--radius);
-    color: var(--dim);
-    font: 12.5px var(--mono);
-    padding: 5px 12px;
-    cursor: pointer;
-    transition: color .15s ease, border-color .15s ease;
   }
-  .tab-add:hover { color: var(--text); border-color: var(--border-strong); }
+  .srow .sx:hover { color: var(--red); background: rgba(224,108,117,.12); }
+  .sessdiv {
+    font: 10.5px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--dim);
+    padding: 10px 9px 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+  }
+  .srow .hbtn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--dim);
+    font: 11px var(--mono);
+    padding: 2px 7px;
+    cursor: pointer;
+    flex: none;
+  }
+  .srow .hbtn:hover { color: var(--text); border-color: var(--border-strong); }
+  .srow .hbtn.del:hover { color: var(--red); border-color: rgba(224,108,117,.4); }
+  .sessempty { font: 12px var(--mono); color: var(--dim); padding: 6px 9px; }
 
   /* ---------- chat ---------- */
   .chat { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 0 20px; }
@@ -210,8 +269,8 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     margin-right: auto;
   }
   .chat::-webkit-scrollbar { width: 10px; }
-  .chat::-webkit-scrollbar-thumb { background: #222; border: 3px solid var(--bg); border-radius: 6px; }
-  .chat::-webkit-scrollbar-thumb:hover { background: #2e2e2e; }
+  .chat::-webkit-scrollbar-thumb { background: #232327; border: 3px solid var(--bg); border-radius: 6px; }
+  .chat::-webkit-scrollbar-thumb:hover { background: #333338; }
 
   .msg {
     max-width: 760px;
@@ -233,13 +292,13 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     max-width: 82%;
     margin-left: auto;
     margin-right: auto;
-    background: var(--surface);
+    background: rgba(255,255,255,.05);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 10px 14px;
   }
-  .msg.user .meta { color: var(--accent-dim); }
-  .msg.ai .meta { color: var(--purple); }
+  .msg.user .meta { color: var(--muted); }
+  .msg.ai .meta { color: var(--text); }
   .msg.ai .body { color: var(--text); }
   .msg.sys {
     text-align: center;
@@ -248,7 +307,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   }
   .msg.err {
     background: rgba(224, 108, 117, .07);
-    border: 1px solid rgba(224, 108, 117, .3);
+    border: 1px solid rgba(224, 108, 117, .35);
     border-radius: var(--radius);
     padding: 9px 13px;
     font: 13px var(--mono);
@@ -267,7 +326,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     min-height: 20px;
     padding-top: 10px;
     font: 12px var(--mono);
-    color: var(--accent);
+    color: var(--text);
     opacity: 0;
     transition: opacity .2s ease;
     white-space: nowrap;
@@ -291,7 +350,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   }
   .typing i:nth-child(2) { animation-delay: .18s; }
   .typing i:nth-child(3) { animation-delay: .36s; }
-  @keyframes typePulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; background: var(--muted); } }
+  @keyframes typePulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; background: #ffffff; } }
 
   .hero { padding: 56px 0 8px; }
   .hero h2 { font-size: 21px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 8px; }
@@ -299,7 +358,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .hero p b { color: var(--text); font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
-    background: var(--bg-soft);
+    background: rgba(255,255,255,.04);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--muted);
@@ -314,23 +373,26 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     display: none;
     margin-top: 14px;
     padding: 10px 13px;
-    background: rgba(224, 108, 117, .07);
-    border: 1px solid rgba(224, 108, 117, .3);
+    background: rgba(255,255,255,.05);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    color: #eda4ab;
+    color: var(--text);
     font-size: 13px;
   }
   .banner.on { display: block; }
   .banner code, .banner b { font-family: var(--mono); color: var(--accent); font-weight: 600; }
 
   /* ---------- footer ---------- */
-  footer { flex: none; border-top: 1px solid var(--border); background: var(--bg); padding: 0 20px 14px; }
-  .ctxbar {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    padding-top: 10px;
+  footer {
+    flex: none;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, .78);
+    backdrop-filter: blur(8px);
+    padding: 0 20px 14px;
+    position: relative;
+    z-index: 20;
   }
+  .ctxbar { display: flex; gap: 10px; align-items: center; padding-top: 10px; position: relative; }
   .folderbtn {
     display: flex;
     align-items: center;
@@ -346,7 +408,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     overflow: hidden;
     transition: color .15s ease, border-color .15s ease;
   }
-  .folderbtn:hover { color: var(--text); border-color: var(--border-strong); }
+  .folderbtn:hover, .folderbtn.on { color: var(--text); border-color: var(--border-strong); }
   .folderbtn svg { width: 13px; height: 13px; flex: none; }
   .folderbtn .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .modelsel {
@@ -363,7 +425,75 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     transition: border-color .15s ease;
   }
   .modelsel:hover, .modelsel:focus { border-color: var(--border-strong); }
-  .modelsel option { background: var(--bg-soft); }
+  .modelsel option, .modelsel optgroup { background: var(--bg-soft); color: var(--text); }
+
+  /* folder popover */
+  .folderpop {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: 400px;
+    max-width: calc(100vw - 40px);
+    background: var(--bg-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 12px;
+    display: none;
+    z-index: 60;
+    animation: fadeIn .14s ease both;
+  }
+  .folderpop.on { display: block; }
+  .folderpop h4 {
+    font: 600 11px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .fbpath {
+    font: 12px var(--mono);
+    color: var(--text);
+    word-break: break-all;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 9px;
+    margin-bottom: 8px;
+  }
+  .fblist {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .fbrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    font: 13px var(--mono);
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 1px solid #1a1a1d;
+    transition: background .1s ease, color .1s ease;
+  }
+  .fbrow:last-child { border-bottom: 0; }
+  .fbrow:hover { background: var(--surface2); color: var(--text); }
+  .fbrow .ic { color: var(--accent-dim); flex: none; }
+  .fbinput {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: 13px var(--mono);
+    outline: none;
+  }
+  .fbinput:focus { border-color: var(--border-strong); }
+  .fbactions { display: flex; gap: 8px; margin-top: 8px; }
 
   .composer { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; padding-top: 10px; }
   textarea {
@@ -387,14 +517,14 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     border: 0;
     border-radius: var(--radius);
     background: var(--accent);
-    color: #0a0a0a;
+    color: #000000;
     cursor: pointer;
     display: grid; place-items: center;
     transition: filter .15s ease;
   }
-  .send:hover { filter: brightness(1.08); }
-  .send:active { filter: brightness(.95); }
-  .send:disabled { opacity: .45; cursor: not-allowed; }
+  .send:hover { filter: brightness(.88); }
+  .send:active { filter: brightness(.75); }
+  .send:disabled { opacity: .4; cursor: not-allowed; }
   .send svg { width: 16px; height: 16px; }
   .hint {
     max-width: 760px;
@@ -419,7 +549,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     position: fixed;
     inset: 0;
     z-index: 50;
-    background: rgba(0, 0, 0, .62);
+    background: rgba(0, 0, 0, .7);
     display: none;
     place-items: center;
   }
@@ -442,7 +572,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     margin-bottom: 4px;
   }
   .sheet .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 18px; }
-  .sheet .sub span { font-family: var(--mono); font-size: 11.5px; color: var(--purple); word-break: break-all; }
+  .sheet .sub span { font-family: var(--mono); font-size: 11.5px; color: var(--accent-dim); word-break: break-all; }
   .field { margin-bottom: 14px; }
   .field label {
     display: block;
@@ -455,7 +585,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .field input, .field select {
     width: 100%;
     padding: 9px 11px;
-    background: var(--bg);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--text);
@@ -478,7 +608,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .keyrow input { flex: 1; font-family: var(--mono); font-size: 13px; }
   .keyrow .eye {
     width: 42px;
-    background: var(--bg);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--muted);
@@ -504,69 +634,10 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #0a0a0a;
+    color: #000000;
     font-weight: 600;
   }
-  .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
-
-  /* history list in settings */
-  .histlist { display: flex; flex-direction: column; gap: 6px; }
-  .histrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 7px 10px;
-    font: 12.5px var(--mono);
-  }
-  .histrow .hname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-  .histrow .hdate { color: var(--dim); font-size: 11px; flex: none; }
-  .histrow button {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--muted);
-    font: 11.5px var(--mono);
-    padding: 3px 8px;
-    cursor: pointer;
-    flex: none;
-    transition: color .15s, border-color .15s;
-  }
-  .histrow button:hover { color: var(--text); border-color: var(--border-strong); }
-  .histrow button.del:hover { color: var(--red); border-color: rgba(224,108,117,.4); }
-  .histempty { font: 12px var(--mono); color: var(--dim); }
-
-  /* folder browser */
-  .fblist {
-    max-height: 240px;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    margin-top: 8px;
-  }
-  .fbrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 11px;
-    font: 13px var(--mono);
-    color: var(--muted);
-    cursor: pointer;
-    border-bottom: 1px solid #1a1a1a;
-    transition: background .1s ease, color .1s ease;
-  }
-  .fbrow:last-child { border-bottom: 0; }
-  .fbrow:hover { background: var(--surface); color: var(--text); }
-  .fbrow .ic { color: var(--accent-dim); flex: none; }
-  .fbpath {
-    font: 12px var(--mono);
-    color: var(--purple);
-    word-break: break-all;
-    margin-bottom: 8px;
-  }
+  .btn.primary:hover { filter: brightness(.9); background: var(--accent); }
 
   .toast {
     position: fixed;
@@ -587,11 +658,14 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 640px) {
-    .tab { max-width: 140px; }
+    .sesspanel { width: calc(100vw - 32px); right: -60px; }
+    .folderpop { width: calc(100vw - 40px); }
     .msg.user { max-width: 92%; }
+    .iconbtn .lbl { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
+    body::before { opacity: .92; }
   }
 </style>
 </head>
@@ -606,15 +680,25 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
         <button type="button" data-mode="build" class="active">build</button>
         <button type="button" data-mode="plan">plan</button>
       </div>
-      <button class="iconbtn" id="gearBtn" title="Настройки" aria-label="Настройки">
+      <div class="sesswrap">
+        <button class="iconbtn" id="sessBtn" title="Сессии">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <span class="lbl">сессии</span>
+        </button>
+        <div class="sesspanel" id="sessPanel">
+          <button class="newsess" id="sessNew">+ новая сессия</button>
+          <div id="sessActive"></div>
+          <div id="sessHistWrap" style="display:none">
+            <div class="sessdiv">история</div>
+            <div id="sessHist"></div>
+          </div>
+        </div>
+      </div>
+      <button class="iconbtn sq" id="gearBtn" title="Настройки" aria-label="Настройки">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
   </header>
-
-  <div class="tabs" id="tabs">
-    <button class="tab-add" id="tabAdd" title="Новая сессия">+ новая</button>
-  </div>
 
   <main class="chat" id="chat">
     <div class="hero" id="hero">
@@ -640,6 +724,17 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       <select class="modelsel" id="modelSel" title="Модель">
         <option value="">модели…</option>
       </select>
+
+      <div class="folderpop" id="folderPop">
+        <h4>Папка проекта</h4>
+        <div class="fbpath" id="fbPath">…</div>
+        <div class="fblist" id="fbList"></div>
+        <input class="fbinput" id="fbInput" placeholder="путь и Enter…" autocomplete="off" spellcheck="false"/>
+        <div class="fbactions">
+          <button class="btn" id="fbCancel">Отмена</button>
+          <button class="btn primary" id="fbOk">Выбрать</button>
+        </div>
+      </div>
     </div>
     <div class="composer">
       <textarea id="input" rows="1" placeholder="Задача для агента…  Enter — отправить, Shift+Enter — перенос"></textarea>
@@ -682,31 +777,9 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       <div class="hint">LM Studio / Ollama / vLLM: http://localhost:1234/v1</div>
     </div>
 
-    <div class="field" id="histField" style="display:none">
-      <label>История сессий</label>
-      <div class="histlist" id="histList"></div>
-    </div>
-
     <div class="actions">
       <button class="btn" id="setCancel">Отмена</button>
       <button class="btn primary" id="setSave">Сохранить</button>
-    </div>
-  </div>
-</div>
-
-<!-- folder picker -->
-<div class="overlay" id="folderOverlay">
-  <div class="sheet" role="dialog" aria-modal="true">
-    <h3>Папка проекта</h3>
-    <div class="sub">Агент работает в выбранной папке</div>
-    <div class="fbpath" id="fbPath">…</div>
-    <div class="field">
-      <input type="text" id="fbInput" placeholder="путь и Enter…" autocomplete="off" spellcheck="false"/>
-    </div>
-    <div class="fblist" id="fbList"></div>
-    <div class="actions">
-      <button class="btn" id="fbCancel">Отмена</button>
-      <button class="btn primary" id="fbOk">Выбрать эту папку</button>
     </div>
   </div>
 </div>
@@ -722,11 +795,6 @@ const statusEl = document.getElementById('status');
 const statusText = document.getElementById('statusText');
 const banner = document.getElementById('banner');
 const hero = document.getElementById('hero');
-const tabsEl = document.getElementById('tabs');
-const tabAdd = document.getElementById('tabAdd');
-const modelSel = document.getElementById('modelSel');
-const folderBtn = document.getElementById('folderBtn');
-const folderName = document.getElementById('folderName');
 const toast = document.getElementById('toast');
 
 let mode = 'build';
@@ -807,7 +875,13 @@ function autosize() {
 }
 input.addEventListener('input', autosize);
 
-/* ---------- sessions ---------- */
+/* ---------- sessions dropdown ---------- */
+const sessBtn = document.getElementById('sessBtn');
+const sessPanel = document.getElementById('sessPanel');
+const sessActive = document.getElementById('sessActive');
+const sessHistWrap = document.getElementById('sessHistWrap');
+const sessHist = document.getElementById('sessHist');
+
 function textOf(m) {
   const c = m.content;
   if (typeof c === 'string') return c;
@@ -836,27 +910,56 @@ function renderMessages(msgs) {
   scrollDown();
 }
 
-function renderTabs() {
+function mkRow(name) {
+  const row = document.createElement('div');
+  row.className = 'srow';
+  const nm = document.createElement('span');
+  nm.className = 'sname';
+  nm.textContent = name;
+  nm.title = name;
+  row.appendChild(nm);
+  return { row, nm };
+}
+
+function renderSessions() {
   const open = sessionsData.filter(s => !s.closed);
-  tabsEl.innerHTML = '';
+  const closed = sessionsData.filter(s => s.closed);
+  sessActive.innerHTML = '';
   for (const s of open) {
-    const t = document.createElement('button');
-    t.className = 'tab' + (s.id === currentSid ? ' active' : ' inactive');
-    t.title = s.name;
-    const nm = document.createElement('span');
-    nm.className = 'tname';
-    nm.textContent = s.name;
+    const { row, nm } = mkRow(s.name);
+    if (s.id === currentSid) row.classList.add('active');
     const x = document.createElement('span');
-    x.className = 'x';
+    x.className = 'sx';
     x.textContent = '×';
     x.title = 'Закрыть сессию';
     x.addEventListener('click', ev => { ev.stopPropagation(); closeSession(s.id); });
-    t.appendChild(nm);
-    t.appendChild(x);
-    t.addEventListener('click', () => { if (s.id !== currentSid) selectSession(s.id); });
-    tabsEl.appendChild(t);
+    row.appendChild(x);
+    row.addEventListener('click', () => { if (s.id !== currentSid) selectSession(s.id); });
+    sessActive.appendChild(row);
   }
-  tabsEl.appendChild(tabAdd);
+  if (!open.length) {
+    const e = document.createElement('div');
+    e.className = 'sessempty';
+    e.textContent = 'нет открытых сессий';
+    sessActive.appendChild(e);
+  }
+  sessHistWrap.style.display = closed.length ? '' : 'none';
+  sessHist.innerHTML = '';
+  for (const s of closed) {
+    const { row, nm } = mkRow(s.name);
+    const resume = document.createElement('button');
+    resume.className = 'hbtn';
+    resume.textContent = 'открыть';
+    resume.addEventListener('click', ev => { ev.stopPropagation(); resumeSession(s.id); });
+    const del = document.createElement('button');
+    del.className = 'hbtn del';
+    del.textContent = '×';
+    del.title = 'Удалить';
+    del.addEventListener('click', ev => { ev.stopPropagation(); deleteSession(s.id); });
+    row.appendChild(resume);
+    row.appendChild(del);
+    sessHist.appendChild(row);
+  }
 }
 
 async function loadSessions(renderView) {
@@ -865,23 +968,21 @@ async function loadSessions(renderView) {
     sessionsData = j.sessions || [];
     currentSid = j.current || '';
     if (j.cwd) { cwdStr = j.cwd; updateFolderLabel(); }
-    renderTabs();
+    renderSessions();
     if (renderView) renderMessages(j.messages);
   } catch (e) {
     showToast('сессии: ' + e);
   }
 }
 
-async function refreshTabs() {
+async function refreshSessions() {
   try {
     const j = await (await fetch('/sessions')).json();
     const prev = currentSid;
     sessionsData = j.sessions || [];
     currentSid = j.current || '';
-    if (currentSid !== prev) {
-      renderMessages(j.messages);
-    }
-    renderTabs();
+    if (currentSid !== prev) renderMessages(j.messages);
+    renderSessions();
   } catch (e) { /* ignore */ }
 }
 
@@ -897,7 +998,9 @@ async function selectSession(id) {
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
     currentSid = j.current;
     renderMessages(j.messages);
-    renderTabs();
+    renderSessions();
+    sessPanel.classList.remove('on');
+    sessBtn.classList.remove('on');
   } catch (e) {
     showToast('сессия: ' + e);
   }
@@ -919,17 +1022,74 @@ async function closeSession(id) {
   }
 }
 
-tabAdd.addEventListener('click', async () => {
+async function resumeSession(id) {
+  if (busy) return;
+  try {
+    const r = await fetch('/sessions/resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    currentSid = j.current;
+    renderMessages(j.messages);
+    await loadSessions(false);
+    sessPanel.classList.remove('on');
+    sessBtn.classList.remove('on');
+    showToast('сессия возобновлена');
+  } catch (e) {
+    showToast('возобновить: ' + e);
+  }
+}
+
+async function deleteSession(id) {
+  try {
+    await fetch('/sessions/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    await loadSessions(false);
+  } catch (e) {
+    showToast('удалить: ' + e);
+  }
+}
+
+sessBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const on = sessPanel.classList.toggle('on');
+  sessBtn.classList.toggle('on', on);
+  folderPop.classList.remove('on');
+  folderBtn.classList.remove('on');
+  if (on) loadSessions(false);
+});
+document.getElementById('sessNew').addEventListener('click', async () => {
   if (busy) return;
   try {
     await fetch('/sessions/new', { method: 'POST' });
     await loadSessions(true);
+    sessPanel.classList.remove('on');
+    sessBtn.classList.remove('on');
+    input.focus();
   } catch (e) {
     showToast('новая: ' + e);
   }
 });
+document.addEventListener('click', e => {
+  if (!sessPanel.contains(e.target) && !sessBtn.contains(e.target)) {
+    sessPanel.classList.remove('on');
+    sessBtn.classList.remove('on');
+  }
+  if (!folderPop.contains(e.target) && !folderBtn.contains(e.target)) {
+    folderPop.classList.remove('on');
+    folderBtn.classList.remove('on');
+  }
+});
 
 /* ---------- models ---------- */
+const modelSel = document.getElementById('modelSel');
+
 async function loadModels() {
   modelSel.innerHTML = '<option value="">загрузка…</option>';
   try {
@@ -937,12 +1097,31 @@ async function loadModels() {
     modelSel.innerHTML = '';
     const list = j.models || [];
     const cur = j.current || '';
-    if (list.length) {
-      for (const id of list) {
+    const fill = (ids, label) => {
+      if (!ids.length) return null;
+      let parent = modelSel;
+      if (label) {
+        const og = document.createElement('optgroup');
+        og.label = label;
+        modelSel.appendChild(og);
+        parent = og;
+      }
+      for (const id of ids) {
         const o = document.createElement('option');
         o.value = id;
         o.textContent = id;
-        modelSel.appendChild(o);
+        parent.appendChild(o);
+      }
+      return parent;
+    };
+    if (list.length) {
+      const free = list.filter(id => id.indexOf(':free') !== -1);
+      const rest = list.filter(id => id.indexOf(':free') === -1);
+      if (free.length && rest.length) {
+        fill(free, 'бесплатные');
+        fill(rest, 'платные / остальные');
+      } else {
+        fill(list, null);
       }
       if (cur && !list.includes(cur)) {
         const o = document.createElement('option');
@@ -985,7 +1164,15 @@ modelSel.addEventListener('change', async () => {
   }
 });
 
-/* ---------- folder ---------- */
+/* ---------- folder popover ---------- */
+const folderBtn = document.getElementById('folderBtn');
+const folderName = document.getElementById('folderName');
+const folderPop = document.getElementById('folderPop');
+const fbPath = document.getElementById('fbPath');
+const fbInput = document.getElementById('fbInput');
+const fbList = document.getElementById('fbList');
+let fbCur = '';
+
 function baseName(p) {
   if (!p) return '';
   const parts = p.split(/[\\/]/).filter(Boolean);
@@ -995,12 +1182,6 @@ function updateFolderLabel() {
   folderName.textContent = baseName(cwdStr) || cwdStr || 'папка';
   folderBtn.title = cwdStr || 'Папка проекта';
 }
-
-const folderOverlay = document.getElementById('folderOverlay');
-const fbPath = document.getElementById('fbPath');
-const fbInput = document.getElementById('fbInput');
-const fbList = document.getElementById('fbList');
-let fbCur = '';
 
 async function fbBrowse(p) {
   try {
@@ -1012,9 +1193,15 @@ async function fbBrowse(p) {
     fbInput.value = fbCur;
     fbList.innerHTML = '';
     if (j.parent) {
-      const row = document.createElement('div');
+      const { row, nm } = { row: document.createElement('div'), nm: null };
       row.className = 'fbrow';
-      row.innerHTML = '<span class="ic">↑</span><span>..</span>';
+      const ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.textContent = '↑';
+      const t = document.createElement('span');
+      t.textContent = '..';
+      row.appendChild(ic);
+      row.appendChild(t);
       row.addEventListener('click', () => fbBrowse(j.parent));
       fbList.appendChild(row);
     }
@@ -1042,12 +1229,18 @@ async function fbBrowse(p) {
   }
 }
 
-folderBtn.addEventListener('click', () => {
-  folderOverlay.classList.add('on');
-  fbBrowse(cwdStr || '.');
+folderBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const on = folderPop.classList.toggle('on');
+  folderBtn.classList.toggle('on', on);
+  sessPanel.classList.remove('on');
+  sessBtn.classList.remove('on');
+  if (on) fbBrowse(cwdStr || '.');
 });
-document.getElementById('fbCancel').addEventListener('click', () => folderOverlay.classList.remove('on'));
-folderOverlay.addEventListener('click', e => { if (e.target === folderOverlay) folderOverlay.classList.remove('on'); });
+document.getElementById('fbCancel').addEventListener('click', () => {
+  folderPop.classList.remove('on');
+  folderBtn.classList.remove('on');
+});
 fbInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); fbBrowse(fbInput.value.trim()); }
 });
@@ -1062,7 +1255,8 @@ document.getElementById('fbOk').addEventListener('click', async () => {
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
     cwdStr = j.path;
     updateFolderLabel();
-    folderOverlay.classList.remove('on');
+    folderPop.classList.remove('on');
+    folderBtn.classList.remove('on');
     showToast('папка: ' + baseName(cwdStr));
   } catch (e) {
     showToast('папка: ' + e);
@@ -1150,7 +1344,7 @@ async function send() {
     setStatus('');
     busy = false;
     sendBtn.disabled = false;
-    refreshTabs();
+    refreshSessions();
     scrollDown();
     input.focus();
   }
@@ -1198,8 +1392,6 @@ const customUrlField = document.getElementById('customUrlField');
 const setCustomUrl = document.getElementById('setCustomUrl');
 const provStyle = document.getElementById('provStyle');
 const cfgPath = document.getElementById('cfgPath');
-const histField = document.getElementById('histField');
-const histList = document.getElementById('histList');
 let providers = [];
 
 function currentProv() {
@@ -1217,72 +1409,10 @@ function refreshProviderFields() {
   customUrlField.style.display = p.id === 'custom' ? '' : 'none';
 }
 
-function renderHistory() {
-  const closed = sessionsData.filter(s => s.closed);
-  histField.style.display = closed.length ? '' : 'none';
-  histList.innerHTML = '';
-  if (!closed.length) return;
-  for (const s of closed) {
-    const row = document.createElement('div');
-    row.className = 'histrow';
-    const nm = document.createElement('span');
-    nm.className = 'hname';
-    nm.textContent = s.name;
-    nm.title = s.name;
-    const dt = document.createElement('span');
-    dt.className = 'hdate';
-    dt.textContent = s.updated ? new Date(s.updated * 1000).toLocaleDateString('ru') : '';
-    const resume = document.createElement('button');
-    resume.textContent = 'возобновить';
-    resume.addEventListener('click', async () => {
-      try {
-        const r = await fetch('/sessions/resume', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: s.id })
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-        currentSid = j.current;
-        renderMessages(j.messages);
-        overlay.classList.remove('on');
-        await loadSessions(false);
-        showToast('сессия возобновлена');
-      } catch (e) {
-        showToast('возобновить: ' + e);
-      }
-    });
-    const del = document.createElement('button');
-    del.className = 'del';
-    del.textContent = 'удалить';
-    del.addEventListener('click', async () => {
-      try {
-        await fetch('/sessions/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: s.id })
-        });
-        await loadSessions(false);
-        renderHistory();
-      } catch (e) {
-        showToast('удалить: ' + e);
-      }
-    });
-    row.appendChild(nm);
-    row.appendChild(dt);
-    row.appendChild(resume);
-    row.appendChild(del);
-    histList.appendChild(row);
-  }
-}
-
 async function openSettings() {
   try {
-    const [sr, hr] = await Promise.all([fetch('/settings'), fetch('/sessions')]);
-    const s = await sr.json();
-    const h = await hr.json();
+    const s = await (await fetch('/settings')).json();
     providers = s.providers || [];
-    sessionsData = h.sessions || [];
     cfgPath.textContent = s.config_path || '';
     setProvider.innerHTML = '';
     for (const p of providers) {
@@ -1295,7 +1425,6 @@ async function openSettings() {
     setCustomUrl.value = s.custom_base_url || '';
     setKey.value = '';
     refreshProviderFields();
-    renderHistory();
     overlay.classList.add('on');
     setTimeout(() => setKey.focus(), 60);
   } catch (e) {
@@ -1499,22 +1628,16 @@ static json fetch_model_list(const Config& c) {
         std::string id = m.value("id", m.value("name", ""));
         if (id.empty()) continue;
         if (id.rfind("models/", 0) == 0) id = id.substr(7);
-        if (st == "openai" && c.provider == "openrouter") {
-            auto arch = m.value("architecture", json::object());
-            auto mods = arch.value("input_modalities", json::array());
-            bool has_img = false;
-            for (auto& x : mods)
-                if (x.is_string() && x.get<std::string>() == "image") has_img = true;
-            if (!has_img || id.find(":free") == std::string::npos) continue;
-        } else if (st == "openai" && c.provider == "nvidia") {
-            std::string low = to_lower(id);
-            if (low.find("vl") == std::string::npos && low.find("vision") == std::string::npos &&
-                low.find("omni") == std::string::npos &&
-                low.find("multimodal") == std::string::npos)
-                continue;
-        }
         out.push_back(id);
-        if ((int)out.size() >= 300) break;
+        if ((int)out.size() >= 500) break;
+    }
+    // бесплатные (OpenRouter :free) — наверх списка
+    if (c.provider == "openrouter") {
+        std::stable_sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+            bool fa = a.find(":free") != std::string::npos;
+            bool fb = b.find(":free") != std::string::npos;
+            return fa > fb;
+        });
     }
     return out;
 }
