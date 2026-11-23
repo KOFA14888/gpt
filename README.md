@@ -1,128 +1,111 @@
-# ScreenMate AI — десктопный ИИ с зрением
+# ScreenMate AI — coding agent with screen vision (C++)
 
-Небольшой оверлей в правом нижнем углу экрана: видит экран в живом времени
-(по умолчанию **5 FPS**), отвечает на вопросы о том, что на нём происходит, и
-всегда висит поверх остальных окон. Запросы идут напрямую в **OpenRouter**
-(бесплатные модели) или **NVIDIA NIM** — через совместимый с OpenAI API
-`chat/completions` с потоковым выводом.
+Terminal agent in the spirit of OpenCode / Claude Code, written in **C++17**:
+reads and edits your project, runs shell commands, searches code, talks to an
+LSP — and **sees your screen** (screenshot + window list) so it can tell which
+program is open, what the buttons say, and move a real mouse cursor.
 
-## Запуск (Windows)
+Python GUI from earlier versions lives in [`legacy/`](legacy/) and is no longer
+the main app.
 
-1. Установи [Python 3.10+](https://www.python.org/downloads/) и отметь **Add Python to PATH**.
-2. Двойной клик по **`run.bat`**. Он сам создаст `.venv`, установит пакеты и запустит приложение. Файл батника намеренно только на ASCII/CRLF — не переписывайте его из чата, иначе cmd может исказить кириллицу.
-3. Вставь ключ в `.env` (создаётся автоматически из `.env.example`) или открой `⚙` в чате и введи ключ там.
+## Features
 
-Ручной запуск:
+| Area | What you get |
+| --- | --- |
+| TUI | fullscreen chat, **Tab** switches `BUILD` ↔ `PLAN`, Enter sends |
+| Agents | **build** — full access (files, shell, cursor); **plan** — read-only analysis |
+| Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `cursor` `lsp` |
+| Vision | GDI screenshot (JPEG) + `list_windows` (titles + process names) |
+| Cursor | `MOVE` / `CLICK` / `RIGHT_CLICK` / `DOUBLE_CLICK` / `TYPE` via SendInput, clamped to work region |
+| LSP | definition / hover via spawned language server (`pylsp`, `clangd`, …) |
+| CLI | `run`, `auth login`, `serve`, `models` |
+| HTTP | WinHTTP on Windows (no deps), libcurl elsewhere; long read timeout for slow free models |
+
+## Build
+
+### Windows (recommended)
+
+Need Visual Studio Build Tools 2022 + CMake (or just use GitHub Actions).
 
 ```bat
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python main.py
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+build\Release\screenmate.exe
 ```
 
-### Где взять ключи
+### GitHub Actions
 
-| Провайдер | Ключ | Бесплатные модели |
-| --- | --- | --- |
-| OpenRouter | https://openrouter.ai/keys | https://openrouter.ai/models?max_price=0 |
-| NVIDIA NIM | https://build.nvidia.com/settings/api-keys | https://build.nvidia.com/ (метка *Free Endpoint*) |
+Every push runs [`.github/workflows/build.yml`](.github/workflows/build.yml):
 
-В настройках можно одним нажатием «обновить» подтянуть актуальный список
-визионных моделей: у OpenRouter — только `:free` с поддержкой `image`, у
-NVIDIA — модели с `vl`/`vision`/`omni`/`multimodal` в названии. Модель можно
-вписать вручную — списки провайдеров меняются.
+- **windows** — MSVC build, uploads `screenmate-windows` artifact, releases zip on `main`
+- **linux-smoke** — compile + `screenmate help`
 
-## Как пользоваться
+Download the binary from the Actions **Artifacts** tab (or Releases).
 
-- Введи вопрос в поле чата и нажми **Enter** — к запросу автоматически
-  прикрепляется самый свежий кадр экрана.
-- `◉` — показать/скрыть превью того, что видит ассистент.
-- `❚❚` — пауза захвата (например, чтобы ввести пароль).
-- `⚙` — провайдер, ключи, модель, FPS, качество JPEG, системная инструкция.
-- Перетаскивание за шапку — переместить окно, за `◢` внизу справа — изменить размер.
-- Свёрнутое окно лежит в системном трее: ЛКМ — показать/скрыть, ПКМ — меню (настройки, пауза, выход).
-- Пока идёт ответ, кнопка отправки превращается в `■` — нажми её, чтобы отменить запрос.
-
-## Устройство
-
-- `desktop_ai/capture.py` — отдельный поток захвата: `mss` (или `PIL.ImageGrab`),
-  ресайз до 1600 px, JPEG, **5 кадров/сек**. Область самого чата закрашивается
-  в кадре, чтобы ассистент не видел свой собственный интерфейс и не попадал в петлю обратной связи.
-- `desktop_ai/providers.py` — OpenRouter / NVIDIA NIM, потоковый SSE-ответ,
-  список моделей, понятные ошибки (401/402/404/429/5xx).
-- `desktop_ai/ui.py` — PySide6-оверлей: `FramelessWindowHint | Tool |
-  WindowStaysOnTopHint`, трей, чат, настройки.
-- `desktop_ai/config.py` — `%APPDATA%\screenmate_ai\config.json`, ключи читаются
-  также из `.env` и переменных окружения.
-
-## Безопасность
-
-Скриншоты уходят только выбранному провайдеру в составе запроса; локально
-кадры не сохраняются и никуда дополнительно не отправляются. Нажми `❚❚`
-перед вводом паролей или конфиденциальной информации. Файл `.env` и
-`config.json` не попадут в Git (см. `.gitignore`).
-
-## Проверка ядра без GUI
+### Linux (smoke)
 
 ```bash
-python -m unittest discover -s tests -v
+sudo apt-get install -y g++ cmake libcurl4-openssl-dev
+cmake -B build && cmake --build build
+./build/screenmate help
 ```
 
-## Если приложение закрылось без ошибки
+## Usage
 
-Смотри `%APPDATA%\screenmate_ai\crash.log` — туда пишутся ошибки Python,
-жизненный цикл запросов и (через `faulthandler`) даже жёсткие падения.
-Начиная с версии 1.0.2 ответы обрабатываются обычным потоком Python + очередью
-в GUI, без удаления `QThread`/`QObject` — это убирает тихий краш после получения
-ответа.
-
-Если провайдер пишет «лимит исчерпан» (429) — это лимит бесплатной модели, а не
-поломка: открой `⚙` → «обновить» и выбери другую модель, либо переключи
-провайдера OpenRouter ↔ NVIDIA NIM.
-
-## Кракозябры в ответе («Ð¯ Ð²Ð¸Ð¶Ñ»)
-
-Исправлено в 1.0.3: поток SSE теперь декодируется строго как UTF-8 (раньше
-`requests` мог решить, что это Latin-1, если провайдер не прислал `charset`).
-В `run.bat` добавлен `chcp 65001`, чтобы и служебные сообщения в консоли были
-читаемыми.
-
-## Выделенная область экрана
-
-Кнопка `▣` в шапке открывает полупрозрачный прямоугольник поверх всего стола:
-- тащить внутри — переместить;
-- тащить за сторону/угол — изменить размер;
-- стрелки — сдвинуть на 10 px (Shift — на 1 px), Ctrl+стрелки — изменить размер;
-- **Enter** — применить, **Esc** — отменить.
-
-После применения ИИ получает кадры только из этой области (в 5 FPS). Сбросить
-обратно на весь экран можно в `⚙` кнопкой «весь экран».
-
-## Курсор ИИ
-
-Кнопка `✥` включает/выключает управление. Когда оно включено, в системную
-инструкцию добавляется список команд, и модель может написать в ответе, например:
-
-```
-[MOVE 640 400]
-[CLICK 640 400]
-[RIGHT_CLICK 300 200]
-[DOUBLE_CLICK 900 500]
+```text
+screenmate                 # interactive TUI
+screenmate run "опиши что на экране"
+screenmate run -p "план: как устроен этот репозиторий"
+screenmate auth login      # OpenRouter / NVIDIA keys + model
+screenmate auth status
+screenmate serve --port 8765
+screenmate models
 ```
 
-Ассистент видит отдельный фиолетовый курсор на экране: он плавно (~0.4 c)
-перемещается к цели, мигает в момент клика, затем реальный курсор Windows
-возвращается на исходное место. Команды в чате не показываются. Если управление
-выключено — команды просто игнорируются, в чате появится уведомление.
+### TUI keys
 
-**Внимание:** не оставляйте управление включённым там, где вводятся пароли или
-подтверждаются платежи.
+- **Tab** — BUILD (full access) / PLAN (read-only)
+- **Enter** — send
+- **Ctrl+C** — cancel current request, again — exit
+- **Ctrl+U** — clear input line · **Ctrl+L** — clear transcript
+- `/mode` `/clear` `/help` `/exit`
 
-## Чаты и история
+### First run
 
-- `☰` — меню чатов: новый чат, список сохранённых (текущий отмечен точкой),
-  удалить текущий.
-- `⌫` — очистить историю текущего чата (сам чат остаётся).
-- Переписка автоматически сохраняется в `%APPDATA%\screenmate_ai\chats\*.json`,
-  активный чат запоминается между запусками. В модель уходят только последние
-  `history_limit*2` сообщений, но в чате и на диске хранится вся история.
+```bash
+screenmate auth login
+screenmate
+```
+
+Keys are stored in `%APPDATA%\screenmate_ai\config.json` (Windows) or
+`~/.config/screenmate_ai/config.json`. You can also put `OPENROUTER_API_KEY` /
+`NVIDIA_NIM_API_KEY` into `.env` next to the binary.
+
+## Config extras
+
+```json
+{
+  "lsp_servers": { ".py": "pylsp", ".cpp": "clangd" },
+  "region": [0, 0, 1280, 720],
+  "attach_screenshot": true,
+  "max_side": 1600,
+  "quality": 70
+}
+```
+
+`region` clamps both screenshots and AI cursor actions to a work area.
+
+## Layout
+
+```text
+src/           C++17 sources (agent, TUI, tools, LSP, screen, cursor, HTTP)
+third_party/   nlohmann/json + stb_image_write (vendored)
+.github/       Actions workflow
+legacy/        old Python overlay (frozen)
+```
+
+## Security
+
+Screenshots go only to the configured provider inside the chat request; frames
+are not written to disk. Pause or don't use BUILD mode when typing passwords.
+`.env` and `config.json` are gitignored.

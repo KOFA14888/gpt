@@ -18,3 +18,10 @@ Desktop.ini
 *.log
 
 .mypy_cache/
+
+# C++ build
+build/
+cmake-build-*/
+*.exe
+*.o
+*.obj
