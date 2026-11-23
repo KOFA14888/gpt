@@ -21,23 +21,25 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 2>&1 | Tee-Object -FilePath build_log.txt
           if ($LASTEXITCODE -ne 0) {
-            $log = Get-Content build_log.txt -Raw
-            Write-Host "::error::Windows build failed"
-            # dump errors to job summary
-            $errors = (Get-Content build_log.txt | Select-String -Pattern "error|Error C|LNK" | Select-Object -First 80) -join "`n"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Windows build errors`n``````n$errors`n``````"
-            # also print to console for annotations
-            Write-Host $errors
+            $lines = Get-Content build_log.txt
+            # Emit each compiler error as a GitHub annotation (visible via API)
+            $count = 0
+            foreach ($l in $lines) {
+              if ($l -match 'error\s+[A-Z]?\d+|error C\d+|LNK\d+|fatal error') {
+                Write-Host "::error::$l"
+                $count++
+                if ($count -ge 50) { break }
+              }
+            }
+            if ($count -eq 0) {
+              # dump last 40 lines as annotations so we can see what happened
+              $tail = $lines | Select-Object -Last 40
+              foreach ($l in $tail) {
+                Write-Host "::error::$l"
+              }
+            }
             exit 1
           }
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build-log
-          path: build_log.txt
-          if-no-files-found: ignore
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
