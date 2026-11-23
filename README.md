@@ -54,6 +54,7 @@ cmake -B build && cmake --build build
 
 ```text
 screenmate                 # interactive TUI
+screenmate tui             # terminal UI
 screenmate run "опиши что на экране"
 screenmate run -p "план: как устроен этот репозиторий"
 screenmate auth login      # OpenRouter / NVIDIA keys + model

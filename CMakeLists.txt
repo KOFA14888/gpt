@@ -16,6 +16,7 @@ add_executable(screenmate
   src/tools.cpp
   src/agent.cpp
   src/tui.cpp
+  src/webui.cpp
 )
 
 target_include_directories(screenmate PRIVATE

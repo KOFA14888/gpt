@@ -1,6 +1,7 @@
 // ScreenMate AI — terminal coding agent with screen vision.
 // Commands:
-//   screenmate                interactive TUI
+//   screenmate                graphical chat GUI (browser window)
+//   screenmate tui             interactive terminal UI
 //   screenmate run "prompt"   one-shot agent turn (prints answer)
 //   screenmate auth login     save API keys interactively
 //   screenmate serve          headless HTTP server (POST /chat)
@@ -20,6 +21,7 @@
 #include "http.hpp"
 #include "tui.hpp"
 #include "tools.hpp"
+#include "webui.hpp"
 
 #ifdef _WIN32
 // sockets/windows come from common.hpp (winsock2 before windows.h)
@@ -40,7 +42,8 @@ static void print_usage() {
     std::cout <<
         "ScreenMate AI — coding agent with screen vision\n"
         "\n"
-        "  screenmate                 interactive TUI (Tab: build/plan)\n"
+        "  screenmate                 open graphical chat GUI in browser\n"
+        "  screenmate tui              terminal UI (Tab: build/plan)\n"
         "  screenmate run \"prompt\"    one-shot: agent works, prints answer\n"
         "  screenmate run -p \"...\"    same (plan/read-only mode)\n"
         "  screenmate auth login      enter OpenRouter / NVIDIA keys\n"
@@ -312,15 +315,19 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     if (args.empty()) {
-        Config cfg = Config::load();
-        TuiApp app(std::move(cfg));
-        return app.run();
+        // Graphical chat UI (default)
+        return gui_run(8765);
     }
 
     const std::string& cmd = args[0];
     if (cmd == "help" || cmd == "--help" || cmd == "-h") {
         print_usage();
         return 0;
+    }
+    if (cmd == "tui" || cmd == "term" || cmd == "cli") {
+        Config cfg = Config::load();
+        TuiApp app(std::move(cfg));
+        return app.run();
     }
     if (cmd == "auth") {
         if (args.size() >= 2 && args[1] == "status") return cmd_auth_status();
