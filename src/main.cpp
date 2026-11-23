@@ -44,43 +44,53 @@ static void print_usage() {
     std::cout <<
         "ScreenMate AI — coding agent with screen vision\n"
         "\n"
-        "  screenmate                 open native desktop window\n"
+        "  screenmate                 open web GUI in browser (default)\n"
+        "  screenmate desktop         native desktop window (Windows)\n"
         "  screenmate tui              terminal UI (Tab: build/plan)\n"
         "  screenmate run \"prompt\"    one-shot: agent works, prints answer\n"
         "  screenmate run -p \"...\"    same (plan/read-only mode)\n"
-        "  screenmate auth login      enter OpenRouter / NVIDIA keys\n"
+        "  screenmate auth login      enter provider + API key interactively\n"
         "  screenmate auth status     show provider + model\n"
-        "  screenmate web [--port N]    browser GUI (optional)\n"
+        "  screenmate web [--port N]    web GUI (same as default)\n"
         "  screenmate serve [--port N]  headless API: POST /chat\n"
-        "  screenmate models          refresh model list from providers\n"
+        "  screenmate models          list models for current provider\n"
         "  screenmate help\n";
 }
 
 static int cmd_auth() {
     Config c = Config::load();
-    std::cout << "Provider [1] OpenRouter  [2] NVIDIA NIM (default 2): ";
+    const auto& defs = provider_defs();
+
+    std::cout << "Providers:\n";
+    for (size_t i = 0; i < defs.size(); ++i) {
+        std::string mark = defs[i].id == c.provider ? " (current)" : "";
+        std::string keym = c.has_key(defs[i].id) ? "key: set" : "key: -";
+        std::cout << "  [" << (i + 1) << "] " << defs[i].label << "  " << keym << mark << "\n";
+    }
+    std::cout << "Provider number: ";
     std::string line;
     std::getline(std::cin, line);
     line = trim(line);
-    if (line == "1") c.provider = "openrouter";
-    else c.provider = "nvidia";
+    int idx = atoi(line.c_str());
+    if (idx >= 1 && idx <= (int)defs.size()) c.provider = defs[idx - 1].id;
 
-    std::cout << "OpenRouter key (enter to skip, current "
-              << (c.openrouter_key.empty() ? "empty" : "set") << "): ";
+    const auto* d = c.def();
+    std::cout << "API key for " << d->label << " (enter to skip, current "
+              << (c.has_key(c.provider) ? "set" : "empty") << "): ";
     std::getline(std::cin, line);
-    if (!trim(line).empty()) c.openrouter_key = trim(line);
+    if (!trim(line).empty()) c.keys[c.provider] = trim(line);
 
-    std::cout << "NVIDIA NIM key (enter to skip, current "
-              << (c.nvidia_key.empty() ? "empty" : "set") << "): ";
-    std::getline(std::cin, line);
-    if (!trim(line).empty()) c.nvidia_key = trim(line);
+    if (c.provider == "custom") {
+        std::cout << "Base URL [" << (c.custom_base_url.empty() ? "https://…/v1"
+                                                                : c.custom_base_url)
+                  << "]: ";
+        std::getline(std::cin, line);
+        if (!trim(line).empty()) c.custom_base_url = trim(line);
+    }
 
     std::cout << "Model [" << c.model() << "]: ";
     std::getline(std::cin, line);
-    if (!trim(line).empty()) {
-        if (c.provider == "nvidia") c.nvidia_model = trim(line);
-        else c.openrouter_model = trim(line);
-    }
+    if (!trim(line).empty()) c.models[c.provider] = trim(line);
 
     c.save();
     std::cout << "Saved to " << Config::config_file().string() << "\n";
@@ -155,20 +165,30 @@ static int cmd_run(const std::vector<std::string>& args) {
 static int cmd_models() {
     Config c = Config::load();
     std::map<std::string, std::string> hdrs;
+    std::string st = c.style();
     try {
         std::string body;
-        if (c.provider == "nvidia") {
-            if (!c.nvidia_key.empty()) hdrs["Authorization"] = "Bearer " + c.nvidia_key;
-            body = http_get("https://integrate.api.nvidia.com/v1/models", hdrs, 20);
+        if (st == "anthropic") {
+            if (!c.api_key().empty()) {
+                hdrs["x-api-key"] = c.api_key();
+                hdrs["anthropic-version"] = "2023-06-01";
+            }
+            body = http_get("https://api.anthropic.com/v1/models", hdrs, 20);
+        } else if (st == "gemini") {
+            if (!c.api_key().empty()) hdrs["x-goog-api-key"] = c.api_key();
+            body = http_get(c.base_url() + "/models", hdrs, 20);
         } else {
-            body = http_get("https://openrouter.ai/api/v1/models", hdrs, 20);
+            if (!c.api_key().empty()) hdrs["Authorization"] = "Bearer " + c.api_key();
+            body = http_get(c.base_url() + "/models", hdrs, 20);
         }
         json j = json::parse(body);
         int n = 0;
-        for (auto& m : j.value("data", json::array())) {
-            std::string id = m.value("id", "");
+        json arr = j.value("data", json::array());
+        if (arr.empty()) arr = j.value("models", json::array());
+        for (auto& m : arr) {
+            std::string id = m.value("id", m.value("name", ""));
             if (id.empty()) continue;
-            if (c.provider == "openrouter") {
+            if (st == "openai" && c.provider == "openrouter") {
                 auto arch = m.value("architecture", json::object());
                 auto mods = arch.value("input_modalities", json::array());
                 bool has_img = false;
@@ -176,16 +196,18 @@ static int cmd_models() {
                     if (x.is_string() && x.get<std::string>() == "image") has_img = true;
                 bool free = id.find(":free") != std::string::npos;
                 if (!has_img || !free) continue;
-            } else {
+            } else if (st == "openai" && c.provider == "nvidia") {
                 std::string low = to_lower(id);
                 if (low.find("vl") == std::string::npos && low.find("vision") == std::string::npos &&
-                    low.find("omni") == std::string::npos && low.find("multimodal") == std::string::npos)
+                    low.find("omni") == std::string::npos &&
+                    low.find("multimodal") == std::string::npos)
                     continue;
             }
+            if (id.rfind("models/", 0) == 0) id = id.substr(7);
             std::cout << id << "\n";
             if (++n >= 80) break;
         }
-        std::cerr << "(" << n << " models — put id into config.json model field)\n";
+        std::cerr << "(" << n << " models — put id into Settings / config.json model field)\n";
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;
@@ -318,7 +340,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     if (args.empty()) {
-        int rc = desktop_run();
+        // default: web GUI in the browser
+        int rc = gui_run(8765);
         if (rc >= 0) return rc;
         Config cfg = Config::load();
         TuiApp app(std::move(cfg));
@@ -332,7 +355,21 @@ int main(int argc, char** argv) {
     }
     if (cmd == "web") {
         std::vector<std::string> rest(args.begin() + 1, args.end());
-        return gui_run(rest.empty() ? 8765 : std::atoi(rest[0].c_str()));
+        int port = 8765;
+        for (size_t i = 0; i < rest.size(); ++i)
+            if ((rest[i] == "--port" || rest[i] == "-p") && i + 1 < rest.size())
+                port = std::atoi(rest[i + 1].c_str());
+        if (!rest.empty() && rest[0].rfind("--port", 0) != 0 && rest[0] != "-p" &&
+            std::atoi(rest[0].c_str()) > 0)
+            port = std::atoi(rest[0].c_str());
+        return gui_run(port);
+    }
+    if (cmd == "desktop" || cmd == "gui") {
+        int rc = desktop_run();
+        if (rc >= 0) return rc;
+        Config cfg = Config::load();
+        TuiApp app(std::move(cfg));
+        return app.run();
     }
     if (cmd == "tui" || cmd == "term" || cmd == "cli") {
         Config cfg = Config::load();

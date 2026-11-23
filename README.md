@@ -12,13 +12,14 @@ the main app.
 
 | Area | What you get |
 | --- | --- |
-| GUI | default launch: **native desktop window** (Win32 + DirectX 11 + Dear ImGui), **Tab** = build/plan |
+| GUI | default launch: **web GUI** in the browser (animated chat, SSE streaming, **Tab** = build/plan); native window via `screenmate desktop` |
 | TUI | `screenmate tui` — fullscreen terminal chat, **Tab** switches `BUILD` ↔ `PLAN` |
 | Agents | **build** — full access (files, shell, cursor); **plan** — read-only analysis |
 | Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `cursor` `lsp` — cursor: MOVE/HOVER/CLICK/DRAG/SCROLL/KEY/TYPE/POS (real mouse) |
 | Vision | GDI screenshot (JPEG) + `list_windows` (titles + process names) |
 | Cursor | Real mouse via SendInput: `MOVE` `HOVER` `CLICK` `RIGHT_CLICK` `MIDDLE_CLICK` `DOUBLE_CLICK` `DRAG` `SCROLL` `KEY` `TYPE` `POS`; clamped to work region |
 | LSP | definition / hover via spawned language server (`pylsp`, `clangd`, …) |
+| Providers | NVIDIA NIM, OpenRouter, OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, Together, custom OpenAI-compatible — pick + paste key in **Settings ⚙** |
 | CLI | `run`, `auth login`, `serve`, `models` |
 | HTTP | WinHTTP on Windows (no deps), libcurl elsewhere; long read timeout for slow free models |
 
@@ -54,13 +55,12 @@ cmake -B build && cmake --build build
 ## Usage
 
 ```text
-screenmate                 # native desktop window
-screenmate tui             # terminal UI
-screenmate web             # browser UI
+screenmate                 # web GUI in the browser (default)
+screenmate desktop         # native desktop window (Windows)
 screenmate tui             # terminal UI
 screenmate run "опиши что на экране"
 screenmate run -p "план: как устроен этот репозиторий"
-screenmate auth login      # OpenRouter / NVIDIA keys + model
+screenmate auth login      # interactive: provider + API key + model
 screenmate auth status
 screenmate serve --port 8765
 screenmate models
@@ -77,13 +77,25 @@ screenmate models
 ### First run
 
 ```bash
-screenmate auth login
-screenmate
+screenmate        # opens the web GUI
 ```
 
+Click **⚙ Settings**, choose a provider, paste the API key, optionally set the
+model — **Сохранить**. Or from the terminal:
+
+```bash
+screenmate auth login
+```
+
+Supported providers: NVIDIA NIM · OpenRouter · OpenAI · Anthropic · Google
+Gemini · Groq · DeepSeek · Mistral · Together · custom (any OpenAI-compatible
+endpoint, e.g. LM Studio / Ollama / vLLM).
+
 Keys are stored in `%APPDATA%\screenmate_ai\config.json` (Windows) or
-`~/.config/screenmate_ai/config.json`. You can also put `OPENROUTER_API_KEY` /
-`NVIDIA_NIM_API_KEY` into `.env` next to the binary.
+`~/.config/screenmate_ai/config.json`. You can also put
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` /
+`OPENROUTER_API_KEY` / `NVIDIA_NIM_API_KEY` / `DEEPSEEK_API_KEY` /
+`MISTRAL_API_KEY` / `TOGETHER_API_KEY` into `.env` next to the binary.
 
 ## Config extras
 

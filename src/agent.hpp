@@ -37,6 +37,8 @@ nlohmann::json build_messages(Config& cfg, const std::vector<nlohmann::json>& hi
 // Parse SSE `data:` payloads from an HTTP stream body already split by caller.
 // Used by http layer via callback — here we accumulate tool_calls.
 struct StreamAccum {
+    // wire protocol: "openai" | "anthropic" | "gemini" (default openai)
+    std::string style = "openai";
     std::string text;
     // index -> {id, name, args}
     std::map<int, nlohmann::json> tool_calls;

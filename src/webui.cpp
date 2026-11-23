@@ -337,6 +337,85 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     animation: popIn .4s ease both;
   }
   .banner.on { display: block; }
+  /* ---------- settings ---------- */
+  .iconbtn {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: rgba(0,0,0,0.28); border: 1px solid var(--stroke);
+    color: var(--muted); font-size: 17px; cursor: pointer;
+    display: grid; place-items: center;
+    transition: transform .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .iconbtn:hover {
+    color: var(--text); transform: rotate(30deg);
+    border-color: rgba(124,108,255,0.5); box-shadow: 0 0 18px rgba(124,108,255,0.3);
+  }
+  .headright { display: flex; align-items: center; gap: 10px; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(5,7,12,0.66); backdrop-filter: blur(8px);
+    display: none; place-items: center;
+    animation: fadeIn .25s ease both;
+  }
+  .overlay.on { display: grid; }
+  .sheet {
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100vh - 60px); overflow-y: auto;
+    background: linear-gradient(165deg, #171b28, #10131c);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px; padding: 22px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    animation: popIn .4s cubic-bezier(.2,.9,.2,1) both;
+  }
+  .sheet h3 { font-size: 17px; font-weight: 650; margin-bottom: 4px; }
+  .sheet .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
+  .field { margin-bottom: 13px; }
+  .field label {
+    display: block; font-size: 12px; color: var(--muted);
+    letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 11px 12px;
+    border-radius: 12px; border: 1px solid var(--stroke);
+    background: rgba(0,0,0,0.3); color: var(--text);
+    font: 14px/1.4 inherit; outline: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: rgba(124,108,255,0.55);
+    box-shadow: 0 0 0 3px rgba(124,108,255,0.15);
+  }
+  .field .hint { font-size: 11.5px; color: var(--muted); margin-top: 5px; text-transform: none; letter-spacing: 0; }
+  .field select option { background: #141826; }
+  .sheet .actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn {
+    flex: 1; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--stroke);
+    background: rgba(255,255,255,0.05); color: var(--text);
+    font: 600 13.5px/1 inherit; cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.09); }
+  .btn.primary {
+    border: 0;
+    background: linear-gradient(145deg, var(--accent), #5b8cff);
+    box-shadow: 0 8px 22px rgba(124,108,255,0.35);
+  }
+  .btn.primary:hover { box-shadow: 0 12px 28px rgba(124,108,255,0.45); }
+  .keyrow { display: flex; gap: 8px; }
+  .keyrow input { flex: 1; }
+  .keyrow .eye {
+    width: 42px; border-radius: 12px; border: 1px solid var(--stroke);
+    background: rgba(0,0,0,0.3); color: var(--muted); cursor: pointer; font-size: 14px;
+  }
+  .toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: linear-gradient(145deg, #1d2333, #171b28);
+    border: 1px solid rgba(61,220,151,0.4); color: #bfeeda;
+    padding: 11px 20px; border-radius: 999px; font-size: 13.5px;
+    opacity: 0; pointer-events: none; z-index: 60;
+    transition: opacity .3s ease, transform .3s ease;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
   /* hero empty state */
   .hero {
     text-align: center;
@@ -369,10 +448,13 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
         <p>кодинг-агент с доступом к экрану</p>
       </div>
     </div>
-    <div class="mode" id="mode" title="Tab / клик — сменить режим">
-      <div class="pill"></div>
-      <button type="button" data-mode="build" class="active">Build</button>
-      <button type="button" data-mode="plan">Plan</button>
+    <div class="headright">
+      <div class="mode" id="mode" title="Tab / клик — сменить режим">
+        <div class="pill"></div>
+        <button type="button" data-mode="build" class="active">Build</button>
+        <button type="button" data-mode="plan">Plan</button>
+      </div>
+      <button class="iconbtn" id="gearBtn" title="Настройки (API-ключи, провайдеры)">⚙</button>
     </div>
   </header>
 
@@ -382,7 +464,7 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
       <h2>Чем займёмся?</h2>
       <p>Опиши задачу — агент прочитает код, найдёт нужное, снимет скриншот экрана и поможет. Режим <b>Build</b> правит файлы, <b>Plan</b> только анализирует.</p>
     </div>
-    <div class="banner" id="banner">Нет API-ключа. Выполни <code>screenmate auth login</code> в терминале и перезапусти.</div>
+    <div class="banner" id="banner">Нет API-ключа. Нажми ⚙ Настройки и введи ключ провайдера.</div>
     <div id="stream"></div>
   </main>
 
@@ -398,6 +480,51 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     </div>
   </footer>
 </div>
+
+<div class="overlay" id="settingsOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <h3 id="setTitle">⚙ Настройки</h3>
+    <div class="sub">Провайдер, API-ключ и модель. Сохраняется в <span id="cfgPath" style="color:#9b93ff"></span></div>
+
+    <div class="field">
+      <label for="setProvider">Провайдер</label>
+      <select id="setProvider"></select>
+      <div class="hint" id="provStyle" style="font-size:11.5px;color:var(--muted);margin-top:5px;"></div>
+    </div>
+
+    <div class="field">
+      <label for="setKey">API-ключ</label>
+      <div class="keyrow">
+        <input type="password" id="setKey" placeholder="sk-…" autocomplete="off" spellcheck="false"/>
+        <button class="eye" id="keyEye" title="Показать/скрыть">👁</button>
+      </div>
+      <div class="hint" id="keyState">…</div>
+    </div>
+
+    <div class="field" id="customUrlField" style="display:none">
+      <label for="setCustomUrl">Base URL (OpenAI-compatible)</label>
+      <input type="text" id="setCustomUrl" placeholder="https://my-server/v1" autocomplete="off" spellcheck="false"/>
+      <div class="hint">Например LM Studio / Ollama / vLLM: http://localhost:1234/v1</div>
+    </div>
+
+    <div class="field">
+      <label for="setModel">Модель</label>
+      <input type="text" id="setModel" placeholder="default" autocomplete="off" spellcheck="false"/>
+      <div class="hint" id="modelDefault">…</div>
+    </div>
+
+    <div class="field">
+      <label for="setPrompt">Системный промпт</label>
+      <textarea id="setPrompt" rows="4"></textarea>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="setCancel">Отмена</button>
+      <button class="btn primary" id="setSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 <script>
 const chat = document.getElementById('chat');
 const stream = document.getElementById('stream');
@@ -592,6 +719,106 @@ fetch('/health').then(r => r.json()).then(j => {
   if (j && j.need_auth) banner.classList.add('on');
 }).catch(() => {});
 
+/* ---------- settings ---------- */
+const overlay = document.getElementById('settingsOverlay');
+const setProvider = document.getElementById('setProvider');
+const setKey = document.getElementById('setKey');
+const keyState = document.getElementById('keyState');
+const setModel = document.getElementById('setModel');
+const modelDefault = document.getElementById('modelDefault');
+const setPrompt = document.getElementById('setPrompt');
+const setCustomUrl = document.getElementById('setCustomUrl');
+const customUrlField = document.getElementById('customUrlField');
+const provStyle = document.getElementById('provStyle');
+const cfgPath = document.getElementById('cfgPath');
+const toast = document.getElementById('toast');
+let providers = [];
+
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add('on');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('on'), 2600);
+}
+
+function currentProv() {
+  return providers.find(p => p.id === setProvider.value) || providers[0];
+}
+
+function refreshProviderFields() {
+  const p = currentProv();
+  if (!p) return;
+  provStyle.textContent = p.style + ' · ' + (p.base || 'custom base');
+  keyState.textContent = p.has_key
+    ? 'Ключ сохранён: ••••' + p.key_tail + ' (оставь поле пустым, чтобы не менять)'
+    : 'Ключ не задан — введи его';
+  setKey.placeholder = p.has_key ? '••••' + p.key_tail : 'вставь API-ключ…';
+  modelDefault.textContent = p.current_model
+    ? 'Текущая: ' + p.current_model
+    : 'По умолчанию: ' + p.default_model;
+  setModel.placeholder = p.default_model || 'model-id';
+  customUrlField.style.display = p.id === 'custom' ? '' : 'none';
+}
+
+async function openSettings() {
+  try {
+    const r = await fetch('/settings');
+    const s = await r.json();
+    providers = s.providers || [];
+    cfgPath.textContent = s.config_path || '';
+    setProvider.innerHTML = '';
+    for (const p of providers) {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + (p.has_key ? ' ✓' : '');
+      if (p.id === s.provider) o.selected = true;
+      setProvider.appendChild(o);
+    }
+    setPrompt.value = s.system_prompt || '';
+    setCustomUrl.value = s.custom_base_url || '';
+    setKey.value = '';
+    refreshProviderFields();
+    overlay.classList.add('on');
+    setTimeout(() => setKey.focus(), 60);
+  } catch (e) {
+    showToast('Не удалось загрузить настройки: ' + e);
+  }
+}
+
+function closeSettings() { overlay.classList.remove('on'); }
+
+setProvider.addEventListener('change', () => { setKey.value = ''; refreshProviderFields(); });
+document.getElementById('gearBtn').addEventListener('click', openSettings);
+document.getElementById('setCancel').addEventListener('click', closeSettings);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeSettings(); });
+document.getElementById('keyEye').addEventListener('click', () => {
+  setKey.type = setKey.type === 'password' ? 'text' : 'password';
+});
+
+document.getElementById('setSave').addEventListener('click', async () => {
+  const body = {
+    provider: setProvider.value,
+    api_key: setKey.value.trim(),
+    model: setModel.value.trim(),
+    custom_base_url: setCustomUrl.value.trim(),
+    system_prompt: setPrompt.value
+  };
+  try {
+    const r = await fetch('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+    banner.classList.remove('on');
+    closeSettings();
+    showToast('✓ Настройки сохранены — ' + (j.provider || ''));
+  } catch (e) {
+    showToast('Ошибка: ' + e);
+  }
+});
+
 setMode('build');
 input.focus();
 </script>
@@ -743,6 +970,91 @@ int gui_run(int port) {
         if (method == "GET" && path == "/health") {
             json j = {{"ok", true}, {"need_auth", cfg.api_key().empty()}};
             respond_json(200, j.dump());
+            closesocket(c);
+            continue;
+        }
+
+        if (method == "GET" && path == "/settings") {
+            std::lock_guard<std::mutex> lock(mu);
+            json provs = json::array();
+            for (const auto& d : provider_defs()) {
+                std::string tail;
+                if (cfg.has_key(d.id)) {
+                    const std::string& k = cfg.keys.at(d.id);
+                    tail = k.size() > 4 ? k.substr(k.size() - 4) : k;
+                }
+                std::string cur_model;
+                {
+                    auto it = cfg.models.find(d.id);
+                    if (it != cfg.models.end()) cur_model = it->second;
+                }
+                provs.push_back({{"id", d.id},
+                                 {"label", d.label},
+                                 {"style", d.style},
+                                 {"base", d.base},
+                                 {"has_key", cfg.has_key(d.id)},
+                                 {"key_tail", tail},
+                                 {"default_model", d.model},
+                                 {"current_model", cur_model}});
+            }
+            json j = {{"provider", cfg.provider},
+                      {"providers", provs},
+                      {"system_prompt", cfg.system_prompt},
+                      {"custom_base_url", cfg.custom_base_url},
+                      {"config_path", Config::config_file().string()},
+                      {"attach_screenshot", cfg.attach_screenshot}};
+            respond_json(200, j.dump());
+            closesocket(c);
+            continue;
+        }
+
+        if (method == "POST" && path == "/settings") {
+            std::string err;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                try {
+                    json j = json::parse(body.empty() ? "{}" : body);
+                    std::string prov = j.value("provider", cfg.provider);
+                    if (!prov.empty()) {
+                        if (find_provider(prov)) cfg.provider = prov;
+                        else err = "unknown provider: " + prov;
+                    }
+                    if (err.empty()) {
+                        std::string key = j.value("api_key", "");
+                        if (!key.empty()) cfg.keys[cfg.provider] = key;
+                        if (j.contains("model")) {
+                            std::string m = j["model"].get<std::string>();
+                            if (m.empty())
+                                cfg.models.erase(cfg.provider);
+                            else
+                                cfg.models[cfg.provider] = m;
+                        }
+                        if (j.contains("custom_base_url")) {
+                            std::string u = j["custom_base_url"].get<std::string>();
+                            while (!u.empty() && u.back() == '/') u.pop_back();
+                            cfg.custom_base_url = u;
+                        }
+                        if (j.contains("system_prompt")) {
+                            std::string p = j["system_prompt"].get<std::string>();
+                            if (!p.empty()) cfg.system_prompt = p;
+                        }
+                        if (j.contains("attach_screenshot"))
+                            cfg.attach_screenshot = j["attach_screenshot"].get<bool>();
+                        cfg.save();
+                    }
+                } catch (const std::exception& e) {
+                    err = e.what();
+                }
+            }
+            if (!err.empty())
+                respond_json(400, json({{"error", err}}).dump());
+            else
+                respond_json(200,
+                             json({{"ok", true},
+                                   {"provider", cfg.provider},
+                                   {"model", cfg.model()},
+                                   {"has_key", !cfg.api_key().empty()}})
+                                 .dump());
             closesocket(c);
             continue;
         }
