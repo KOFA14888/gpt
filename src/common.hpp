@@ -104,6 +104,7 @@ inline std::string base64_encode(const std::string& in) {
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <winhttp.h>
 
 inline std::wstring utf8_to_wide(const std::string& s) {
     if (s.empty()) return L"";
