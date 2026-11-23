@@ -16,7 +16,7 @@ the main app.
 | Agents | **build** — full access (files, shell, cursor); **plan** — read-only analysis |
 | Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `cursor` `lsp` — cursor: MOVE/HOVER/CLICK/DRAG/SCROLL/KEY/TYPE/POS (real mouse) |
 | Vision | GDI screenshot (JPEG) + `list_windows` (titles + process names) |
-| Cursor | `MOVE` / `CLICK` / `RIGHT_CLICK` / `DOUBLE_CLICK` / `TYPE` via SendInput, clamped to work region |
+| Cursor | Real mouse via SendInput: `MOVE` `HOVER` `CLICK` `RIGHT_CLICK` `MIDDLE_CLICK` `DOUBLE_CLICK` `DRAG` `SCROLL` `KEY` `TYPE` `POS`; clamped to work region |
 | LSP | definition / hover via spawned language server (`pylsp`, `clangd`, …) |
 | CLI | `run`, `auth login`, `serve`, `models` |
 | HTTP | WinHTTP on Windows (no deps), libcurl elsewhere; long read timeout for slow free models |
