@@ -50,6 +50,13 @@ if(MSVC)
   )
 else()
   target_compile_options(screenmate PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  # Baseline ISA: ubuntu-latest (Ubuntu 26.04, since 2026-10-30) ships an
+  # amd64v3 GCC whose default -march is x86-64-v3 (AVX2/FMA), which crashes
+  # old CPUs with "CPU ISA level is lower than required" (glibc ld.so).
+  # Force plain x86-64 so release binaries run on any x86-64 processor.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+    target_compile_options(screenmate PRIVATE -march=x86-64 -mtune=generic)
+  endif()
 endif()
 
 if(WIN32)

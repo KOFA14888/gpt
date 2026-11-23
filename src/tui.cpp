@@ -111,7 +111,7 @@ void TuiApp::draw() {
     const char* other_tag = mode_ == AgentMode::Build ? "plan" : "build";
 
     // header: [BUILD] plan  ·  model · cwd
-    printf("%s%s%s %s%s%s  %s%s%s%s\n", B, R, mode_tag, N, D, other_tag, N, D,
+    printf("%s%s%s %s%s%s  %s%s%s%s%s\n", B, R, mode_tag, N, D, other_tag, N, D,
            cfg_.model().c_str(), " · ", ctx_.cwd.string().c_str());
     printf("%s%s%s\n", D, "────────────────────────────────────────────────────────────", N);
 

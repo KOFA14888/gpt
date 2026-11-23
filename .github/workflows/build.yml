@@ -52,7 +52,11 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest floated to 26.04 (2026-10-30), whose GCC defaults
+    # to -march=x86-64-v3 (AVX2) and crashes old CPUs with
+    # "CPU ISA level is lower than required". CMake also forces -march=x86-64;
+    # the pin keeps glibc/libstdc++ we link against baseline as well.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +71,17 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: ISA baseline check
+        # Baseline x86-64 (SSE2) never emits VEX-encoded (v-prefixed)
+        # instructions; any such mnemonic means AVX crept in.
+        run: |
+          bad=$(objdump -d build/screenmate | grep -Eo '\bv[a-z0-9]+\b' | sort -u || true)
+          if [ -n "$bad" ]; then
+            echo "ERROR: not baseline x86-64, found:"; echo "$bad"
+            exit 1
+          fi
+          echo "OK: baseline x86-64 (no AVX)"
 
       - name: Help smoke test
         run: ./build/screenmate help
