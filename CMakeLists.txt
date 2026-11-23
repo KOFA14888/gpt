@@ -25,7 +25,12 @@ target_include_directories(screenmate PRIVATE
 
 if(MSVC)
   target_compile_options(screenmate PRIVATE /utf-8 /W3 /EHsc)
-  target_compile_definitions(screenmate PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_definitions(screenmate PRIVATE
+    _CRT_SECURE_NO_WARNINGS
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    _WIN32_WINNT=0x0A00
+  )
 else()
   target_compile_options(screenmate PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()

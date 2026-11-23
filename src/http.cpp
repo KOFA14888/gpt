@@ -104,10 +104,16 @@ std::string winhttp_request(const std::string& method, const std::string& url,
     for (auto& [k, v] : headers) hdrs += to_wide(k + ": " + v) + L"\r\n";
     if (!hdrs.empty()) hdrs += L"\r\n";
 
-    BOOL ok = WinHttpSendRequest(req, hdrs.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : hdrs.c_str(),
-                                 hdrs.empty() ? 0 : (DWORD)-1L,
-                                 (LPVOID)body.data(), (DWORD)body.size(),
-                                 (DWORD)body.size(), 0);
+    BOOL ok;
+    if (hdrs.empty()) {
+        ok = WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                (LPVOID)body.data(), (DWORD)body.size(),
+                                (DWORD)body.size(), 0);
+    } else {
+        ok = WinHttpSendRequest(req, hdrs.c_str(), (DWORD)-1L,
+                                (LPVOID)body.data(), (DWORD)body.size(),
+                                (DWORD)body.size(), 0);
+    }
     if (!ok) {
         DWORD e = GetLastError();
         WinHttpCloseHandle(req);

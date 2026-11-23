@@ -4,6 +4,8 @@
 #include "http.hpp"
 #include "screen.hpp"
 
+#include <algorithm>
+#include <map>
 #include <stdexcept>
 
 namespace sm {

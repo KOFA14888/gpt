@@ -93,6 +93,12 @@ inline std::string base64_encode(const std::string& in) {
 // ---------- UTF-8 / Windows wide strings (portable stubs off-Windows) ----------
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 
 inline std::wstring utf8_to_wide(const std::string& s) {
