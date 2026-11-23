@@ -2,7 +2,6 @@
 
 #include "common.hpp"
 #include "lsp.hpp"
-#include "screen.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -290,35 +289,6 @@ static json tool_shell(ToolContext& ctx, const json& args) {
 #endif
 }
 
-// ---------- screen ----------
-
-static json tool_screenshot(ToolContext& ctx, const json& args) {
-    (void)args;
-    auto jpg = capture_screen_jpeg(ctx.cfg ? ctx.cfg->max_side : 1600,
-                                   ctx.cfg ? ctx.cfg->quality : 70,
-                                   ctx.cfg ? ctx.cfg->region : std::vector<int>{});
-    if (jpg.empty()) return fail("screenshot unavailable on this platform");
-    ctx.last_screenshot_jpeg = jpg;
-    json r = ok("Screenshot captured (" + std::to_string(jpg.size()) +
-                " bytes JPEG). Image is attached to this tool result.");
-    r["image_b64"] = base64_encode(jpg);
-    return r;
-}
-
-static json tool_list_windows(ToolContext&, const json&) {
-    auto wins = list_windows();
-    if (wins.empty()) return ok("(no visible windows enumerated)");
-    std::string out;
-    int i = 0;
-    for (auto& w : wins) {
-        if (++i > 80) break;
-        out += "- " + w.title;
-        if (!w.process.empty()) out += "  [" + w.process + "]";
-        out += "\n";
-    }
-    return ok(clamp_text(out));
-}
-
 // ---------- LSP ----------
 
 static json tool_lsp(ToolContext& ctx, const json& args) {
@@ -380,10 +350,6 @@ nlohmann::json tool_schemas(AgentMode mode) {
         json{{prop("pattern", "string", "regex or literal")},
              {"glob", {{"type", "string"}, {"description", "file filter, default **/*"}}}},
         {"pattern"});
-    add("screenshot", "Capture the user's screen as an image (vision).", json::object(), {});
-    add("list_windows", "List visible windows with titles and process names — use to identify "
-                        "which programs are on screen.",
-        json::object(), {});
     add("lsp", "Talk to a language server: definition / hover.",
         json{{prop("op", "string", "definition | hover | open")},
              {"path", {{"type", "string"}, {"description", "source file"}}},
@@ -417,8 +383,6 @@ nlohmann::json run_tool(ToolContext& ctx, const std::string& name, const nlohman
         if (name == "list_dir") return tool_list_dir(ctx, args);
         if (name == "glob") return tool_glob(ctx, args);
         if (name == "grep") return tool_grep(ctx, args);
-        if (name == "screenshot") return tool_screenshot(ctx, args);
-        if (name == "list_windows") return tool_list_windows(ctx, args);
         if (name == "lsp") return tool_lsp(ctx, args);
         if (name == "write_file") return tool_write_file(ctx, args);
         if (name == "edit_file") return tool_edit_file(ctx, args);

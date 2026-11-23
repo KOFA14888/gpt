@@ -1,89 +1,87 @@
-# ScreenMate AI — coding agent with screen vision (C++)
+# ScreenMate AI — console coding agent (C++)
 
-Terminal agent in the spirit of OpenCode / Claude Code, written in **C++17**:
-reads and edits your project, runs shell commands, searches code, talks to an
-LSP — and **sees your screen** (screenshot + window list) so it can tell which
-program is open and what the buttons say.
+A Claude Code-style coding agent for your repository, written in **C++17**:
+reads and edits files, runs shell commands, searches code, talks to an LSP —
+right in your terminal. Black & white UI, slash commands, **Tab** = build/plan.
 
 Python GUI from earlier versions lives in [`legacy/`](legacy/) and is no longer
 the main app.
+
+## Install
+
+### Windows (PowerShell)
+
+```powershell
+iwr https://raw.githubusercontent.com/KOFA14888/gpt/arena/d7d4a28f-gpt/install.ps1 -UseBasicParsing | iex
+```
+
+Downloads the prebuilt `screenmate.exe` from Releases (falls back to
+git clone + build), installs to `%LOCALAPPDATA%\ScreenMate\bin`, adds to PATH.
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KOFA14888/gpt/arena/d7d4a28f-gpt/install.sh | bash
+```
+
+Downloads the prebuilt Linux x64 binary from Releases (falls back to
+git clone + cmake build), installs to `~/.local/bin`.
+
+### From source
+
+```bash
+git clone https://github.com/KOFA14888/gpt
+cd gpt
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+./build/screenmate help
+```
+
+Windows: need Visual Studio Build Tools 2022 + CMake.
 
 ## Features
 
 | Area | What you get |
 | --- | --- |
-| GUI | default launch: **web GUI** in the browser (animated chat, SSE streaming, **Tab** = build/plan); native window via `screenmate desktop` |
-| TUI | `screenmate tui` — fullscreen terminal chat, **Tab** switches `BUILD` ↔ `PLAN` |
+| TUI | default launch: Claude Code-style terminal chat, streaming answers, **Tab** = build/plan |
+| Commands | `/help` `/clear` `/mode` `/build` `/plan` `/model [id]` `/cwd [path]` `/tools` `/key` `/exit` |
 | Agents | **build** — full access (files, shell); **plan** — read-only analysis |
-| Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `screenshot` `list_windows` `lsp` |
-| Vision | GDI screenshot (JPEG) + `list_windows` (titles + process names) |
+| Tools | `read_file` `write_file` `edit_file` `list_dir` `grep` `glob` `shell` `lsp` |
 | LSP | definition / hover via spawned language server (`pylsp`, `clangd`, …) |
-| Providers | NVIDIA NIM, OpenRouter, OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, Together, custom OpenAI-compatible — pick + paste key in **Settings ⚙** |
-| CLI | `run`, `auth login`, `serve`, `models` |
+| Providers | NVIDIA NIM, OpenRouter, OpenAI, Anthropic Claude, Google Gemini, Groq, DeepSeek, Mistral, Together, custom OpenAI-compatible — `screenmate auth login` or web **Settings ⚙** |
+| CLI | `run`, `auth login`, `serve`, `web`, `models` |
 | HTTP | WinHTTP on Windows (no deps), libcurl elsewhere; long read timeout for slow free models |
 
-## Build
-
-### Windows (recommended)
-
-Need Visual Studio Build Tools 2022 + CMake (or just use GitHub Actions).
-
-```bat
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-build\Release\screenmate.exe
-```
-
-### GitHub Actions
-
-Every push runs [`.github/workflows/build.yml`](.github/workflows/build.yml):
-
-- **windows** — MSVC build, uploads `screenmate-windows` artifact, releases zip on `main`
-- **linux-smoke** — compile + `screenmate help`
-
-Download the binary from the Actions **Artifacts** tab (or Releases).
-
-### Linux (smoke)
-
-```bash
-sudo apt-get install -y g++ cmake libcurl4-openssl-dev
-cmake -B build && cmake --build build
-./build/screenmate help
-```
+The agent works only with the repository (files, shell, search, LSP) — it has
+**no access to your screen**: no screenshots, no window list, no cursor.
 
 ## Usage
 
 ```text
-screenmate                 # web GUI in the browser (default)
-screenmate desktop         # native desktop window (Windows)
-screenmate tui             # terminal UI
-screenmate run "опиши что на экране"
+screenmate                 # terminal UI (default)
+screenmate run "найди, где падает тест"
 screenmate run -p "план: как устроен этот репозиторий"
 screenmate auth login      # interactive: provider + API key + model
 screenmate auth status
+screenmate web --port 8765 # web GUI (optional)
 screenmate serve --port 8765
 screenmate models
 ```
 
-### TUI keys
+### TUI keys & commands
 
 - **Tab** — BUILD (full access) / PLAN (read-only)
-- **Enter** — send
-- **Ctrl+C** — cancel current request, again — exit
+- **Enter** — send · **Ctrl+C** — cancel, again — exit
 - **Ctrl+U** — clear input line · **Ctrl+L** — clear transcript
-- `/mode` `/clear` `/help` `/exit`
+- `/help` — list commands · `/clear` — reset chat · `/mode` — toggle mode
+- `/model <id>` — switch model · `/cwd <path>` — switch project folder
+- `/tools` — show active tool list · `/key` — key status · `/exit` — quit
 
 ### First run
 
 ```bash
-screenmate        # opens the web GUI
-```
-
-Click **⚙ Settings**, choose a provider, paste the API key, optionally set the
-model — **Сохранить**. Or from the terminal:
-
-```bash
-screenmate auth login
+screenmate auth login   # pick provider, paste API key, optional model
+screenmate              # chat
 ```
 
 Supported providers: NVIDIA NIM · OpenRouter · OpenAI · Anthropic · Google
@@ -96,31 +94,45 @@ Keys are stored in `%APPDATA%\screenmate_ai\config.json` (Windows) or
 `OPENROUTER_API_KEY` / `NVIDIA_NIM_API_KEY` / `DEEPSEEK_API_KEY` /
 `MISTRAL_API_KEY` / `TOGETHER_API_KEY` into `.env` next to the binary.
 
+## Build & CI
+
+Every push runs [`.github/workflows/build.yml`](.github/workflows/build.yml):
+
+- **windows** — MSVC build → `screenmate-windows.zip`
+- **linux** — g++ build + `screenmate help` smoke → `screenmate-linux-x64.tar.gz`
+- **release** — publishes both to the moving **`latest`** release:
+  https://github.com/KOFA14888/gpt/releases/tag/latest
+
+Local Linux build:
+
+```bash
+sudo apt-get install -y g++ cmake libcurl4-openssl-dev
+cmake -B build && cmake --build build
+./build/screenmate help
+```
+
 ## Config extras
 
 ```json
 {
   "lsp_servers": { ".py": "pylsp", ".cpp": "clangd" },
-  "region": [0, 0, 1280, 720],
-  "attach_screenshot": true,
-  "max_side": 1600,
-  "quality": 70
+  "history_limit": 16
 }
 ```
-
-`region` clamps screenshots to a work area.
 
 ## Layout
 
 ```text
-src/           C++17 sources (agent, TUI, tools, LSP, screen, HTTP)
-third_party/   nlohmann/json + stb_image_write (vendored)
+src/           C++17 sources (agent, TUI, tools, LSP, web UI, HTTP)
+third_party/   nlohmann/json + Dear ImGui (vendored)
 .github/       Actions workflow
+install.sh     Linux/macOS installer
+install.ps1    Windows installer
 legacy/        old Python overlay (frozen)
 ```
 
 ## Security
 
-Screenshots go only to the configured provider inside the chat request; frames
-are not written to disk. Pause or don't use BUILD mode when typing passwords.
-`.env` and `config.json` are gitignored.
+The agent never captures your screen. In BUILD mode it can edit files and run
+commands in the project folder — pause or switch to PLAN when typing
+passwords. `.env` and `config.json` are gitignored.

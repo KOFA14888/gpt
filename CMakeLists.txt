@@ -10,7 +10,6 @@ endif()
 set(SM_SOURCES
   src/main.cpp
   src/http.cpp
-  src/screen.cpp
   src/lsp.cpp
   src/tools.cpp
   src/agent.cpp
@@ -69,8 +68,5 @@ else()
     target_link_libraries(screenmate PRIVATE Threads::Threads)
   endif()
 endif()
-
-# stb headers live under third_party/stb — include path is third_party, so
-# #include <stb/stb_image_write.h> works.
 
 install(TARGETS screenmate RUNTIME DESTINATION bin)

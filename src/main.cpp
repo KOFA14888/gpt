@@ -1,11 +1,11 @@
-// ScreenMate AI — terminal coding agent with screen vision.
+// ScreenMate AI — console coding agent (Claude Code-style).
 // Commands:
-//   screenmate                native desktop chat window
-//   screenmate tui             interactive terminal UI
+//   screenmate                interactive terminal UI (default)
 //   screenmate run "prompt"   one-shot agent turn (prints answer)
 //   screenmate auth login     save API keys interactively
 //   screenmate serve          headless HTTP server (POST /chat)
-//   screenmate models         list free vision models
+//   screenmate web            web GUI
+//   screenmate models         list models for current provider
 
 #include <atomic>
 #include <cstdlib>
@@ -42,16 +42,15 @@ using json = nlohmann::json;
 
 static void print_usage() {
     std::cout <<
-        "ScreenMate AI — coding agent with screen vision\n"
+        "ScreenMate AI — console coding agent (Claude Code-style)\n"
         "\n"
-        "  screenmate                 open web GUI in browser (default)\n"
-        "  screenmate desktop         native desktop window (Windows)\n"
-        "  screenmate tui              terminal UI (Tab: build/plan)\n"
+        "  screenmate                 terminal UI (default): chat, /commands, Tab=build/plan\n"
         "  screenmate run \"prompt\"    one-shot: agent works, prints answer\n"
         "  screenmate run -p \"...\"    same (plan/read-only mode)\n"
         "  screenmate auth login      enter provider + API key interactively\n"
         "  screenmate auth status     show provider + model\n"
-        "  screenmate web [--port N]    web GUI (same as default)\n"
+        "  screenmate web [--port N]  web GUI\n"
+        "  screenmate desktop         native desktop window (Windows)\n"
         "  screenmate serve [--port N]  headless API: POST /chat\n"
         "  screenmate models          list models for current provider\n"
         "  screenmate help\n";
@@ -149,7 +148,6 @@ static int cmd_run(const std::vector<std::string>& args) {
         std::lock_guard<std::mutex> lock(out_mu);
         std::cerr << "\n[" << s << "]\n";
     };
-    cb.on_image = [](const std::string&) {};
 
     try {
         std::string ans = agent_turn(cfg, ctx, history, prompt, cb,
@@ -325,9 +323,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     if (args.empty()) {
-        // default: web GUI in the browser
-        int rc = gui_run(8765);
-        if (rc >= 0) return rc;
+        // default: console UI (Claude Code-style)
         Config cfg = Config::load();
         TuiApp app(std::move(cfg));
         return app.run();

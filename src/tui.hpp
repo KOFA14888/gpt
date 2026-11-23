@@ -1,5 +1,5 @@
 #pragma once
-// Full-screen terminal UI: chat transcript, input line, build/plan toggle (Tab).
+// Claude Code-style terminal UI: transcript, streaming, slash commands, build/plan (Tab).
 
 #include <atomic>
 #include <functional>
@@ -37,7 +37,7 @@ private:
     std::atomic<bool> quit_{false};
     std::atomic<bool> cancel_{false};
     std::string status_;
-    std::string pending_image_b64_;  // last screenshot for display hint
+    std::string stream_buf_;  // live streamed answer text
 
     // terminal
     bool raw_ = false;
@@ -56,6 +56,9 @@ private:
     void handle_key(const std::string& utf8_key, bool ctrl);
     void submit();
     void run_agent_async(std::string text);
+    void cmd_model(const std::string& arg);
+    void cmd_cwd(const std::string& arg);
+    void cmd_tools();
 };
 
 }  // namespace sm

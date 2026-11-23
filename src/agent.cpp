@@ -2,7 +2,6 @@
 
 #include "common.hpp"
 #include "http.hpp"
-#include "screen.hpp"
 
 #include <algorithm>
 #include <map>
@@ -386,24 +385,13 @@ static json convert_tools(const std::string& style, const json& openai_tools) {
 // ---------------------------------------------------------------------------
 
 nlohmann::json build_messages(Config& cfg, const std::vector<nlohmann::json>& history,
-                              const std::string& extra_system, bool attach_shot) {
+                              const std::string& extra_system) {
     json msgs = json::array();
     std::string sys = cfg.system_prompt;
     if (!extra_system.empty()) sys += "\n\n" + extra_system;
     msgs.push_back({{"role", "system"}, {"content", sys}});
     for (auto& m : history) msgs.push_back(m);
-    (void)attach_shot;
     return msgs;
-}
-
-static json make_user_with_shot(const std::string& text, const std::string& jpeg_b64) {
-    if (jpeg_b64.empty()) return {{"role", "user"}, {"content", text}};
-    json parts = json::array();
-    parts.push_back({{"type", "text"}, {"text", text}});
-    parts.push_back(
-        {{"type", "image_url"},
-         {"image_url", {{"url", "data:image/jpeg;base64," + jpeg_b64}}}});
-    return {{"role", "user"}, {"content", parts}};
 }
 
 static std::map<std::string, std::string> build_headers(Config& cfg) {
@@ -435,12 +423,7 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
     if (cfg.api_key().empty())
         throw std::runtime_error("No API key. Open Settings (gear) or run: screenmate auth login");
 
-    std::string shot_b64;
-    if (cfg.attach_screenshot) {
-        auto jpg = capture_screen_jpeg(cfg.max_side, cfg.quality, cfg.region);
-        if (!jpg.empty()) shot_b64 = base64_encode(jpg);
-    }
-    history.push_back(make_user_with_shot(user_text, shot_b64));
+    history.push_back({{"role", "user"}, {"content", user_text}});
 
     std::string mode_sys =
         "Режим агента: " + mode_label + ". " +
@@ -472,7 +455,7 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
                         {{"temperature", 0.3}, {"maxOutputTokens", 4096}}}};
             if (!wire_tools.empty()) payload["tools"] = wire_tools;
         } else {
-            json messages = build_messages(cfg, history, mode_sys, true);
+            json messages = build_messages(cfg, history, mode_sys);
             payload = {
                 {"model", cfg.model()},
                 {"messages", messages},
@@ -551,22 +534,10 @@ std::string agent_turn(Config& cfg, ToolContext& ctx, std::vector<json>& history
                 } catch (...) {
                 }
                 json result = run_tool(ctx, name, args);
-                std::string content_s = result.value("content", "");
-                json tool_msg = {{"role", "tool"},
-                                 {"tool_call_id", id},
-                                 {"name", name},
-                                 {"content", content_s}};
-                if (result.contains("image_b64")) {
-                    json parts = json::array();
-                    parts.push_back({{"type", "text"}, {"text", content_s}});
-                    parts.push_back({{"type", "image_url"},
-                                     {"image_url",
-                                      {{"url", "data:image/jpeg;base64," +
-                                                   result["image_b64"].get<std::string>()}}}});
-                    tool_msg["content"] = parts;
-                    if (cb.on_image) cb.on_image(result["image_b64"].get<std::string>());
-                }
-                history.push_back(tool_msg);
+                history.push_back({{"role", "tool"},
+                                   {"tool_call_id", id},
+                                   {"name", name},
+                                   {"content", result.value("content", "")}});
             }
             continue;
         }

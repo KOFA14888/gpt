@@ -314,14 +314,6 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
     color: var(--red);
     max-width: 760px;
   }
-  .msg img.shot {
-    display: block;
-    max-width: 100%;
-    margin-top: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
-
   .status {
     min-height: 20px;
     padding-top: 10px;
@@ -703,9 +695,9 @@ static const char* kIndexHtml = R"HTML(<!DOCTYPE html>
   <main class="chat" id="chat">
     <div class="hero" id="hero">
       <h2>Привет. Чем займёмся?</h2>
-      <p>Опиши задачу — агент прочитает код, снимет скриншот экрана и поможет. Режим <b>build</b> правит файлы и запускает команды, <b>plan</b> только анализирует.</p>
+      <p>Опиши задачу — агент прочитает код репозитория и поможет. Режим <b>build</b> правит файлы и запускает команды, <b>plan</b> только анализирует.</p>
       <div class="chips">
-        <button class="chip" type="button">что видно на экране?</button>
+        <button class="chip" type="button">объясни, что делает этот репозиторий</button>
         <button class="chip" type="button">объясни структуру репозитория</button>
         <button class="chip" type="button">найди, где падает тест</button>
       </div>
@@ -1313,17 +1305,6 @@ async function send() {
           acc += ev.text || '';
           aiBody.textContent = acc;
           scrollDown();
-        } else if (ev.type === 'image') {
-          if (!aiDiv) {
-            typing && typing.remove();
-            aiDiv = addMsg('ai', mode === 'plan' ? 'Plan' : 'Build', '');
-            aiBody = aiDiv.querySelector('.body');
-          }
-          const img = document.createElement('img');
-          img.className = 'shot';
-          img.src = 'data:image/jpeg;base64,' + ev.b64;
-          aiDiv.appendChild(img);
-          scrollDown();
         } else if (ev.type === 'error') {
           typing && typing.remove();
           addMsg('err', null, ev.text || 'ошибка');
@@ -1814,7 +1795,6 @@ int gui_run(int port) {
                       {"providers", provs},
                       {"custom_base_url", cfg.custom_base_url},
                       {"config_path", Config::config_file().string()},
-                      {"attach_screenshot", cfg.attach_screenshot},
                       {"cwd", base_ctx.cwd.string()}};
             respond_json(200, j.dump());
             closesocket(c);
@@ -1847,8 +1827,6 @@ int gui_run(int port) {
                             while (!u.empty() && u.back() == '/') u.pop_back();
                             cfg.custom_base_url = u;
                         }
-                        if (j.contains("attach_screenshot"))
-                            cfg.attach_screenshot = j["attach_screenshot"].get<bool>();
                         cfg.save();
                     }
                 } catch (const std::exception& e) {
@@ -2136,9 +2114,6 @@ int gui_run(int port) {
             };
             cb.on_status = [&](const std::string& s) {
                 send_all(c, sse_event("status", "text", s));
-            };
-            cb.on_image = [&](const std::string& b64) {
-                send_all(c, sse_event("image", "b64", b64));
             };
 
             std::string reply, err;

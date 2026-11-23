@@ -21,16 +21,25 @@ namespace sm {
 
 using std::string;
 
+// Black & white only: SGR 0=reset 1=bold 2=dim 7=reverse. No colors.
+namespace {
+inline const char* B = "\x1b[1m";
+inline const char* D = "\x1b[2m";
+inline const char* R = "\x1b[7m";
+inline const char* N = "\x1b[0m";
+}  // namespace
+
 TuiApp::TuiApp(Config cfg) : cfg_(std::move(cfg)) {
     ctx_.cfg = &cfg_;
     ctx_.cwd = fs::current_path();
     mode_ = AgentMode::Build;
-    push_line("sys", "ScreenMate AI — coding agent with screen vision.");
-    push_line("sys", "Tab: build/plan · Enter: send · Ctrl+C or /exit: quit · /clear: clear");
+    push_line("sys", "ScreenMate — консольный кодинг-агент (Claude Code-стиль).");
+    push_line("sys", "Tab: build/plan · Enter: отправить · /help: команды · Ctrl+C: выход");
     if (cfg_.api_key().empty())
-        push_line("err", "No API key — run: screenmate auth login");
+        push_line("err", "Нет API-ключа — выполни: screenmate auth login");
     else
-        push_line("sys", "Provider: " + cfg_.provider + " · model: " + cfg_.model());
+        push_line("sys", string("Провайдер: ") + cfg_.provider + " · модель: " + cfg_.model() +
+                             " · папка: " + ctx_.cwd.string());
 }
 
 TuiApp::~TuiApp() { restore_terminal(); }
@@ -46,7 +55,6 @@ void TuiApp::setup_terminal() {
     orig_out_mode_val_ = out_mode;
     SetConsoleMode(hin, in_mode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT));
     SetConsoleMode(hout, out_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-    // alt screen
     fputs("\x1b[?1049h\x1b[2J\x1b[H", stdout);
     raw_ = true;
 #else
@@ -61,7 +69,6 @@ void TuiApp::setup_terminal() {
     fputs("\x1b[?1049h\x1b[2J\x1b[H", stdout);
     raw_ = true;
 #endif
-    // hide cursor while drawing, show when needed
     fputs("\x1b[?25l", stdout);
     fflush(stdout);
 }
@@ -98,32 +105,16 @@ void TuiApp::set_status(const std::string& s) {
 
 void TuiApp::draw() {
     std::lock_guard<std::mutex> lock(mu_);
-    // clear
     fputs("\x1b[H\x1b[2J", stdout);
 
-    const char* mode_color = mode_ == AgentMode::Build ? "\x1b[32m" : "\x1b[33m";
-    const char* mode_name = mode_ == AgentMode::Build ? "BUILD" : "PLAN";
+    const char* mode_tag = mode_ == AgentMode::Build ? "BUILD" : "PLAN ";
+    const char* other_tag = mode_ == AgentMode::Build ? "plan" : "build";
 
-    // header
-    printf("\x1b[48;5;235m\x1b[38;5;183m"
-           " ScreenMate AI "
-           "\x1b[0m \x1b[38;5;244m%s\x1b[0m  "
-           "\x1b[38;5;244m·\x1b[0m  %s\n",
-           mode_color, mode_name);
-    // reset color codes properly:
-    // (printf above used mode_color incorrectly as string for %s of color — fix below)
+    // header: [BUILD] plan  ·  model · cwd
+    printf("%s%s%s %s%s%s  %s%s%s%s\n", B, R, mode_tag, N, D, other_tag, N, D,
+           cfg_.model().c_str(), " · ", ctx_.cwd.string().c_str());
+    printf("%s%s%s\n", D, "────────────────────────────────────────────────────────────", N);
 
-    // Actually print header cleanly:
-    // We already printed garbage — do a clean redraw instead:
-    fputs("\x1b[H\x1b[2J", stdout);
-    printf("\x1b[1;36m ScreenMate AI \x1b[0m \x1b[2;90m|\x1b[0m ");
-    if (mode_ == AgentMode::Build) printf("\x1b[1;32mBUILD\x1b[0m");
-    else printf("\x1b[1;33mPLAN\x1b[0m");
-    printf(" \x1b[2;90m| Tab:switch · Enter:send · /exit\x1b[0m\n");
-    fputs("\x1b[2;90m────────────────────────────────────────────────────────\x1b[0m\n",
-          stdout);
-
-    // transcript: fit terminal
     int rows = 24, cols = 80;
 #ifdef _WIN32
     CONSOLE_SCREEN_BUFFER_INFO info{};
@@ -139,43 +130,46 @@ void TuiApp::draw() {
         cols = ws.ws_col;
     }
 #endif
-    int max_lines = rows - 4;
+    (void)cols;
+    int max_lines = rows - 5;
     if (max_lines < 3) max_lines = 3;
 
-    size_t start = lines_.size() > (size_t)max_lines ? lines_.size() - max_lines : 0;
+    // live streamed text while the agent works (last lines only)
+    int stream_extra = 0;
+    if (busy_ && !stream_buf_.empty()) {
+        auto sl = split_lines(stream_buf_);
+        size_t from = sl.size() > 6 ? sl.size() - 6 : 0;
+        for (size_t i = from; i < sl.size(); ++i) {
+            printf("  %s\n", sl[i].c_str());
+            ++stream_extra;
+        }
+    }
+
+    size_t room = (size_t)std::max(3, max_lines - stream_extra);
+    size_t start = lines_.size() > room ? lines_.size() - room : 0;
     for (size_t i = start; i < lines_.size(); ++i) {
         const auto& L = lines_[i];
-        const char* color = "\x1b[0m";
-        const char* prefix = "";
         if (L.kind == "user") {
-            color = "\x1b[1;34m";
-            prefix = "› ";
+            printf("%s❯%s %s\n", B, N, L.text.c_str());
         } else if (L.kind == "ai") {
-            color = "\x1b[0m";
-            prefix = "  ";
+            printf("  %s\n", L.text.c_str());
         } else if (L.kind == "sys") {
-            color = "\x1b[2;90m";
-            prefix = "· ";
-        } else if (L.kind == "status") {
-            color = "\x1b[35m";
-            prefix = "⚙ ";
-        } else if (L.kind == "err") {
-            color = "\x1b[31m";
-            prefix = "! ";
+            printf("%s· %s%s\n", D, L.text.c_str(), N);
+        } else {
+            printf("%s! %s%s\n", B, L.text.c_str(), N);
         }
-        printf("%s%s%s\x1b[0m\n", color, prefix, L.text.c_str());
     }
 
     // status
     if (!status_.empty())
-        printf("\x1b[35m⚙ %s\x1b[0m\n", status_.c_str());
+        printf("%s… %s%s\n", D, status_.c_str(), N);
     else
-        printf("\x1b[2;90m \x1b[0m\n");
+        printf("%s \n", D);
 
     // input
-    printf("\x1b[1;36m❯\x1b[0m %s", input_.c_str());
-    if (busy_) printf("  \x1b[33m…working (Ctrl+C cancel)\x1b[0m");
-    fputs("\x1b[?25h", stdout);  // show cursor
+    printf("%s❯%s %s", B, N, input_.c_str());
+    if (busy_) printf("%s  …работаю (Ctrl+C — отмена)%s", D, N);
+    fputs("\x1b[?25h", stdout);
     fflush(stdout);
 }
 
@@ -184,7 +178,7 @@ void TuiApp::handle_key(const std::string& utf8_key, bool ctrl) {
         if (utf8_key == "c" || utf8_key == "C") {
             if (busy_) {
                 cancel_ = true;
-                set_status("cancelling…");
+                set_status("отмена…");
             } else {
                 quit_ = true;
             }
@@ -205,8 +199,8 @@ void TuiApp::handle_key(const std::string& utf8_key, bool ctrl) {
         if (busy_) return;
         mode_ = mode_ == AgentMode::Build ? AgentMode::Plan : AgentMode::Build;
         ctx_.mode = mode_;
-        push_line("sys", std::string("mode → ") +
-                             (mode_ == AgentMode::Build ? "BUILD (full access)" : "PLAN (read-only)"));
+        push_line("sys", std::string("режим → ") +
+                             (mode_ == AgentMode::Build ? "BUILD (полный доступ)" : "PLAN (только чтение)"));
         return;
     }
     if (utf8_key == "\r" || utf8_key == "\n") {
@@ -215,44 +209,128 @@ void TuiApp::handle_key(const std::string& utf8_key, bool ctrl) {
     }
     if (utf8_key == "\x7f" || utf8_key == "\b") {
         if (!input_.empty()) {
-            // delete one utf-8 codepoint
             while (!input_.empty() && ((unsigned char)input_.back() & 0xC0) == 0x80)
                 input_.pop_back();
             if (!input_.empty()) input_.pop_back();
         }
         return;
     }
-    // arrows for history could go here; ignore other control chars
     if (!utf8_key.empty() && (unsigned char)utf8_key[0] < 0x20 && utf8_key != "\t") return;
     input_ += utf8_key;
+}
+
+void TuiApp::cmd_model(const std::string& arg) {
+    if (arg.empty()) {
+        push_line("sys", "модель: " + cfg_.model() + " · провайдер: " + cfg_.provider +
+                             " · смена: /model <id>");
+        return;
+    }
+    cfg_.models[cfg_.provider] = arg;
+    cfg_.save();
+    push_line("sys", "модель → " + arg);
+}
+
+void TuiApp::cmd_cwd(const std::string& arg) {
+    if (arg.empty()) {
+        push_line("sys", "папка проекта: " + ctx_.cwd.string() + " · смена: /cwd <путь>");
+        return;
+    }
+    std::error_code ec;
+    fs::path p = fs::absolute(fs::path(arg), ec);
+    if (ec || !fs::is_directory(p, ec)) {
+        push_line("err", "нет такой папки: " + arg);
+        return;
+    }
+    ctx_.cwd = p;
+    push_line("sys", "папка → " + p.string());
+}
+
+void TuiApp::cmd_tools() {
+    nlohmann::json schemas = tool_schemas(mode_);
+    std::string out;
+    for (auto& t : schemas) {
+        if (!out.empty()) out += " ";
+        out += t["function"].value("name", "?");
+    }
+    push_line("sys", std::string("тулзы (") +
+                         (mode_ == AgentMode::Build ? "BUILD" : "PLAN") + "): " + out);
 }
 
 void TuiApp::submit() {
     string text = trim(input_);
     input_.clear();
-    if (text.empty() || busy_) return;
+    if (text.empty()) return;
 
-    if (text == "/exit" || text == "/quit" || text == "/q") {
-        quit_ = true;
-        return;
-    }
-    if (text == "/clear") {
-        std::lock_guard<std::mutex> lock(mu_);
-        lines_.clear();
-        history_.clear();
-        return;
-    }
-    if (text == "/mode") {
-        handle_key("\t", false);
-        return;
-    }
-    if (text == "/help") {
-        push_line("sys",
-                  "Commands: /mode /clear /exit · tools: read/write/edit/grep/glob/shell/"
-                  "screenshot/list_windows/lsp");
+    // ---- slash commands ----
+    if (text[0] == '/') {
+        std::string cmd = text, arg;
+        size_t sp = cmd.find(' ');
+        if (sp != std::string::npos) {
+            arg = trim(cmd.substr(sp + 1));
+            cmd = cmd.substr(0, sp);
+        }
+
+        if (cmd == "/exit" || cmd == "/quit" || cmd == "/q") {
+            quit_ = true;
+            return;
+        }
+        if (cmd == "/help" || cmd == "/?") {
+            push_line("sys", "команды: /help /clear /mode /build /plan /model [id] "
+                             "/cwd [путь] /tools /key /exit");
+            push_line("sys", "Tab — переключить build/plan · Ctrl+L — очистить экран");
+            return;
+        }
+        if (busy_) {
+            push_line("err", "дождись ответа агента (Ctrl+C — отмена)");
+            return;
+        }
+        if (cmd == "/clear") {
+            std::lock_guard<std::mutex> lock(mu_);
+            lines_.clear();
+            history_.clear();
+            stream_buf_.clear();
+            return;
+        }
+        if (cmd == "/mode") {
+            handle_key("\t", false);
+            return;
+        }
+        if (cmd == "/build") {
+            mode_ = AgentMode::Build;
+            ctx_.mode = mode_;
+            push_line("sys", "режим → BUILD (полный доступ)");
+            return;
+        }
+        if (cmd == "/plan") {
+            mode_ = AgentMode::Plan;
+            ctx_.mode = mode_;
+            push_line("sys", "режим → PLAN (только чтение)");
+            return;
+        }
+        if (cmd == "/model") {
+            cmd_model(arg);
+            return;
+        }
+        if (cmd == "/cwd" || cmd == "/cd") {
+            cmd_cwd(arg);
+            return;
+        }
+        if (cmd == "/tools") {
+            cmd_tools();
+            return;
+        }
+        if (cmd == "/key") {
+            std::string k = cfg_.api_key();
+            std::string tail = k.size() > 4 ? k.substr(k.size() - 4) : k;
+            push_line("sys", k.empty() ? "ключа нет — выполни: screenmate auth login"
+                                       : "ключ для " + cfg_.provider + " сохранён (••••" + tail + ")");
+            return;
+        }
+        push_line("err", "неизвестная команда: " + cmd + " — попробуй /help");
         return;
     }
 
+    if (busy_) return;
     push_line("user", text);
     run_agent_async(text);
 }
@@ -260,25 +338,43 @@ void TuiApp::submit() {
 void TuiApp::run_agent_async(string text) {
     busy_ = true;
     cancel_ = false;
-    set_status("thinking…");
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        stream_buf_.clear();
+    }
+    set_status("думаю…");
     std::thread([this, text = std::move(text)]() mutable {
         AgentCallbacks cb;
         cb.on_text = [this](const string& d) {
-            // append streamed text as growing ai line — simple: status only + final line
-            (void)d;
-        };
-        cb.on_status = [this](const string& s) { set_status(s); };
-        cb.on_image = [this](const string& b64) {
             std::lock_guard<std::mutex> lock(mu_);
-            pending_image_b64_ = b64;
+            stream_buf_ += d;
+        };
+        cb.on_status = [this](const string& s) {
+            // flush streamed step text into the transcript on each tool step
+            {
+                std::lock_guard<std::mutex> lock(mu_);
+                if (!stream_buf_.empty()) {
+                    for (auto& l : split_lines(stream_buf_)) lines_.push_back({"ai", l});
+                    stream_buf_.clear();
+                }
+            }
+            set_status(s);
         };
         try {
             string answer = agent_turn(cfg_, ctx_, history_, text, cb,
                                        mode_ == AgentMode::Build ? "build" : "plan");
+            {
+                std::lock_guard<std::mutex> lock(mu_);
+                stream_buf_.clear();
+            }
             push_line("ai", answer);
             set_status("");
         } catch (const std::exception& e) {
-            push_line("err", string("error: ") + e.what());
+            {
+                std::lock_guard<std::mutex> lock(mu_);
+                stream_buf_.clear();
+            }
+            push_line("err", string("ошибка: ") + e.what());
             set_status("");
         }
         busy_ = false;
@@ -289,7 +385,6 @@ int TuiApp::run() {
     setup_terminal();
     draw();
 
-    // input thread
     std::thread input_th([this]() {
         unsigned char buf[8];
         while (!quit_) {
@@ -318,18 +413,9 @@ int TuiApp::run() {
             }
             if (ke.uChar.UnicodeChar) {
                 wchar_t wch = ke.uChar.UnicodeChar;
-                if (ctrl && (wch == L'c' || wch == L'C')) {
-                    handle_key("c", true);
-                    continue;
-                }
-                if (ctrl && (wch == L'u' || wch == L'U')) {
-                    handle_key("u", true);
-                    continue;
-                }
-                if (ctrl && (wch == L'l' || wch == L'L')) {
-                    handle_key("l", true);
-                    continue;
-                }
+                if (ctrl && (wch == L'c' || wch == L'C')) { handle_key("c", true); continue; }
+                if (ctrl && (wch == L'u' || wch == L'U')) { handle_key("u", true); continue; }
+                if (ctrl && (wch == L'l' || wch == L'L')) { handle_key("l", true); continue; }
                 if (wch < 32) continue;
                 string u8 = wide_to_utf8(std::wstring(1, wch));
                 handle_key(u8, false);
@@ -341,34 +427,15 @@ int TuiApp::run() {
                 continue;
             }
             if (buf[0] == 0x1b) {
-                // escape sequences: ignore arrows etc.
                 if (n >= 3 && (buf[1] == '[' || buf[1] == 'O')) continue;
                 continue;
             }
-            if (buf[0] == '\t') {
-                handle_key("\t", false);
-                continue;
-            }
-            if (buf[0] == '\r' || buf[0] == '\n') {
-                handle_key("\r", false);
-                continue;
-            }
-            if (buf[0] == 127 || buf[0] == 8) {
-                handle_key("\x7f", false);
-                continue;
-            }
-            if (buf[0] == 3) {  // Ctrl+C
-                handle_key("c", true);
-                continue;
-            }
-            if (buf[0] == 21) {
-                handle_key("u", true);
-                continue;
-            }
-            if (buf[0] == 12) {
-                handle_key("l", true);
-                continue;
-            }
+            if (buf[0] == '\t') { handle_key("\t", false); continue; }
+            if (buf[0] == '\r' || buf[0] == '\n') { handle_key("\r", false); continue; }
+            if (buf[0] == 127 || buf[0] == 8) { handle_key("\x7f", false); continue; }
+            if (buf[0] == 3) { handle_key("c", true); continue; }
+            if (buf[0] == 21) { handle_key("u", true); continue; }
+            if (buf[0] == 12) { handle_key("l", true); continue; }
             if (buf[0] < 32) continue;
             handle_key(std::string((char*)buf, (size_t)n), false);
 #endif
@@ -380,13 +447,9 @@ int TuiApp::run() {
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
-    set_status("bye");
+    set_status("выход");
     draw();
-    if (input_th.joinable()) {
-        // wake reader: on windows it blocks in ReadConsoleInput — process exit will kill it
-        // detach to avoid hang
-        input_th.detach();
-    }
+    if (input_th.joinable()) input_th.detach();
     restore_terminal();
     return 0;
 }

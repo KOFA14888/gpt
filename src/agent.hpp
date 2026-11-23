@@ -18,8 +18,6 @@ struct AgentCallbacks {
     std::function<void(const std::string&)> on_text;
     // "→ tool_name(args)" etc.
     std::function<void(const std::string&)> on_status;
-    // screenshot image ready to show in TUI (jpeg bytes)
-    std::function<void(const std::string& jpeg_b64)> on_image;
 };
 
 // One conversation turn (may loop over tool calls). Returns final assistant text.
@@ -30,9 +28,9 @@ std::string agent_turn(Config& cfg, ToolContext& ctx,
                        const AgentCallbacks& cb,
                        const std::string& mode_label);
 
-// Build request messages from history + system prompt (+ optional live screenshot).
+// Build request messages from history + system prompt.
 nlohmann::json build_messages(Config& cfg, const std::vector<nlohmann::json>& history,
-                              const std::string& extra_system, bool attach_shot);
+                              const std::string& extra_system);
 
 // Parse SSE `data:` payloads from an HTTP stream body already split by caller.
 // Used by http layer via callback — here we accumulate tool_calls.

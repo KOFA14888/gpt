@@ -17,14 +17,12 @@ struct ToolContext {
     Config* cfg = nullptr;
     AgentMode mode = AgentMode::Build;
     fs::path cwd;  // project root
-    // optional: inject latest screenshot bytes when tool "screenshot" runs
-    std::string last_screenshot_jpeg;
 };
 
 // OpenAI-style tool schemas for the current mode.
 nlohmann::json tool_schemas(AgentMode mode);
 
-// Execute a tool call. Returns {"ok":bool,"content":string,"image_b64":optional}
+// Execute a tool call. Returns {"ok":bool,"content":string}
 nlohmann::json run_tool(ToolContext& ctx, const std::string& name,
                         const nlohmann::json& args);
 

@@ -19,12 +19,10 @@ namespace sm {
 inline constexpr const char* kAppName = "ScreenMate AI";
 
 inline const char* kDefaultSystemPrompt =
-    "Ты — ScreenMate AI, CLI-кодинг-агент с доступом к экрану пользователя. "
+    "Ты — ScreenMate AI, консольный кодинг-агент в духе Claude Code. "
     "Отвечай на русском языке, коротко и по делу. "
     "Ты работаешь в репозитории текущей директории: читай и правь файлы, "
-    "запускай команды, ищи по коду. "
-    "Экран: list_windows чтобы узнать какие программы открыты, screenshot — картинка "
-    "кнопок, меню, ошибок, текста. Не выдумывай то, чего не видно. "
+    "запускай команды, ищи по коду, используй LSP. "
     "Планируй коротко перед правками; не ломай то, что не просили.";
 
 // One LLM provider. style selects wire protocol:
@@ -82,11 +80,7 @@ struct Config {
     // base URL for provider == "custom"
     std::string custom_base_url;
     std::string system_prompt = kDefaultSystemPrompt;
-    bool attach_screenshot = true;
-    int max_side = 1600;
-    int quality = 70;
     int history_limit = 16;
-    std::vector<int> region;  // optional [x,y,w,h]
     // extension -> language server command (e.g. ".py" -> "pylsp")
     std::map<std::string, std::string> lsp_servers;
 
@@ -209,14 +203,7 @@ struct Config {
                 if (j.contains("custom_base_url"))
                     c.custom_base_url = j["custom_base_url"].get<std::string>();
                 if (j.contains("system_prompt")) c.system_prompt = j["system_prompt"].get<std::string>();
-                if (j.contains("attach_screenshot")) c.attach_screenshot = j["attach_screenshot"].get<bool>();
-                if (j.contains("max_side")) c.max_side = j["max_side"].get<int>();
-                if (j.contains("quality")) c.quality = j["quality"].get<int>();
                 if (j.contains("history_limit")) c.history_limit = j["history_limit"].get<int>();
-                if (j.contains("region") && j["region"].is_array()) {
-                    c.region.clear();
-                    for (auto& v : j["region"]) c.region.push_back(v.get<int>());
-                }
                 if (j.contains("lsp_servers") && j["lsp_servers"].is_object()) {
                     for (auto it = j["lsp_servers"].begin(); it != j["lsp_servers"].end(); ++it)
                         c.lsp_servers[it.key()] = it.value().get<std::string>();
@@ -260,8 +247,6 @@ struct Config {
 
         if (!find_provider(c.provider)) c.provider = "openrouter";
         if (c.system_prompt.empty()) c.system_prompt = kDefaultSystemPrompt;
-        c.max_side = std::clamp(c.max_side, 640, 2560);
-        c.quality = std::clamp(c.quality, 35, 95);
         c.history_limit = std::clamp(c.history_limit, 0, 64);
         return c;
     }
@@ -275,11 +260,7 @@ struct Config {
         j["models"] = models;
         j["custom_base_url"] = custom_base_url;
         j["system_prompt"] = system_prompt;
-        j["attach_screenshot"] = attach_screenshot;
-        j["max_side"] = max_side;
-        j["quality"] = quality;
         j["history_limit"] = history_limit;
-        j["region"] = region;
         j["lsp_servers"] = lsp_servers;
         std::ofstream out(config_file(), std::ios::trunc);
         out << j.dump(2);

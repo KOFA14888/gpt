@@ -321,7 +321,7 @@ static void draw_ui(AppState& a) {
             ImGui::SetWindowFontScale(1.f);
             ImGui::PopStyleColor();
             ImGui::TextDisabled(
-                "  Опиши задачу — агент прочитает код, снимет скриншот экрана\n"
+                "  Опиши задачу — агент прочитает код репозитория\n"
                 "  и поможет.  Tab — сменить BUILD / PLAN.");
         }
         for (const auto& m : a.msgs) {
@@ -539,7 +539,7 @@ int desktop_run() {
         push_msg(app, 2, "Нет API-ключа — выполни screenmate auth login и перезапустите.");
         push_msg(app, 2, "Tab — BUILD/PLAN · Enter — отправить · Ctrl+Enter — перенос");
     } else {
-        push_msg(app, 2, "ScreenMate AI — coding agent with screen vision");
+        push_msg(app, 2, "ScreenMate AI — console coding agent");
         push_msg(app, 2, "Tab — BUILD/PLAN · Enter — отправить");
     }
 
