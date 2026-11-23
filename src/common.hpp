@@ -14,6 +14,24 @@
 #include <string>
 #include <vector>
 
+// Windows system headers must be included at global scope (never inside a
+// namespace) and winsock2 must precede windows.h — otherwise the SDK
+// headers fail with C2146/C4430/C2065 under MSVC.
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <winhttp.h>
+#include <shellapi.h>
+#include <psapi.h>
+#endif
+
 namespace sm {
 
 namespace fs = std::filesystem;
@@ -93,18 +111,6 @@ inline std::string base64_encode(const std::string& in) {
 // ---------- UTF-8 / Windows wide strings (portable stubs off-Windows) ----------
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-// winsock2 must precede windows.h — otherwise windows.h pulls winsock.h
-// and the SDK headers (ws2def.h / inaddr.h) fail with C2146/C4430.
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <winhttp.h>
 
 inline std::wstring utf8_to_wide(const std::string& s) {
     if (s.empty()) return L"";

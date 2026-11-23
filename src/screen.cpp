@@ -9,14 +9,7 @@
 #include <vector>
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <shellapi.h>
-#include <psapi.h>
+// shellapi.h / psapi.h come from common.hpp (global scope)
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "psapi.lib")

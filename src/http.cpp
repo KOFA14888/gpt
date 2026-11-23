@@ -10,7 +10,6 @@
 
 #ifdef _WIN32
 #pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "winhttp.lib")
 #elif !defined(SM_NO_HTTP)
 #include <curl/curl.h>
 #endif
