@@ -235,6 +235,9 @@ class ChatOverlay(QWidget):
         self.capture.set_region(tuple(config.region) if config.region else None)
 
         self.setObjectName("root")
+        # Without this the frameless window paints an opaque square behind
+        # the rounded card (the "background rectangle" bug on Windows).
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setWindowTitle("ScreenMate AI")
         self.setMinimumSize(320, 360)
         self._build_ui()
@@ -439,6 +442,9 @@ class ChatOverlay(QWidget):
         was_visible = self.isVisible()
         geometry = self.geometry()
         self.setWindowFlags(flags)
+        # setWindowFlags() recreates the window handle and can drop
+        # WA_TranslucentBackground — re-apply it every time.
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setGeometry(geometry)
         if was_visible:
             self.show()
@@ -652,10 +658,16 @@ class ChatOverlay(QWidget):
         color = "#6ee7a8" if self.cfg.allow_control else "#e0b45a"
         self.control_btn.setStyleSheet(f"color: {color};")
 
-    @staticmethod
-    def _clamp_point(x: int, y: int) -> tuple[int, int]:
+    def _clamp_point(self, x: int, y: int) -> tuple[int, int]:
         geo = QApplication.primaryScreen().virtualGeometry()
-        return max(geo.left(), min(geo.right(), int(x))), max(geo.top(), min(geo.bottom(), int(y)))
+        x = max(geo.left(), min(geo.right(), int(x)))
+        y = max(geo.top(), min(geo.bottom(), int(y)))
+        # Keep the AI cursor inside the selected work region when one is set.
+        if self.cfg.region and len(self.cfg.region) == 4:
+            rx, ry, rw, rh = self.cfg.region
+            x = max(rx, min(rx + max(rw, 1) - 1, x))
+            y = max(ry, min(ry + max(rh, 1) - 1, y))
+        return x, y
 
     def execute_actions(self, actions: list[Action]) -> None:
         self._actions = list(actions)
@@ -667,7 +679,7 @@ class ChatOverlay(QWidget):
         action = self._actions.pop(0)
         if action.x is None or action.y is None:
             center = self.virtual_cursor.center_pos()
-            x, y = center.x(), center.y()
+            x, y = self._clamp_point(center.x(), center.y())
         else:
             x, y = self._clamp_point(action.x, action.y)
         log_event(f"cursor action {action.kind} -> {x},{y}")

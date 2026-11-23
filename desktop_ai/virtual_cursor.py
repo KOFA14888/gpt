@@ -77,17 +77,25 @@ class VirtualCursor(QWidget):
             radius = 8 + self._flash
             painter.drawEllipse(center, radius, radius)
 
+        # Classic Windows-style arrow pointer: white fill, black outline.
         path = QPainterPath()
-        path.moveTo(4, 2)
-        path.lineTo(4, 25)
-        path.lineTo(9.5, 19.5)
-        path.lineTo(13, 27)
-        path.lineTo(17, 25)
-        path.lineTo(13.5, 18)
-        path.lineTo(22, 17.5)
+        path.moveTo(3, 2)
+        path.lineTo(3, 24)
+        path.lineTo(8.5, 18.5)
+        path.lineTo(12, 27)
+        path.lineTo(15.5, 25.5)
+        path.lineTo(12, 17.5)
+        path.lineTo(20, 17.5)
         path.closeSubpath()
 
-        painter.setPen(QPen(QColor("#141424"), 2.2, Qt.SolidLine, Qt.RoundJoin))
-        painter.setBrush(QColor("#8b7bff"))
+        # Soft drop shadow so the arrow stays visible on any background.
+        shadow = QPainterPath(path)
+        shadow.translate(1.2, 1.2)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 120))
+        painter.drawPath(shadow)
+
+        painter.setPen(QPen(QColor("#000000"), 1.4, Qt.SolidLine, Qt.RoundJoin))
+        painter.setBrush(QColor("#ffffff"))
         painter.drawPath(path)
         painter.end()

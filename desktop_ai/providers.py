@@ -224,7 +224,9 @@ def ask_stream(
         headers=_chat_headers(provider, api_key),
         json=payload,
         stream=True,
-        timeout=(10, 90),
+        # Free/vision models can be very slow to emit the first token;
+        # a short read timeout was killing answers with an empty response.
+        timeout=(30, 600),
     )
     # SSE is UTF-8 by spec. requests may otherwise decode it as Latin-1 when
     # the provider omits charset — that produces "Ð" instead of Cyrillic.
@@ -265,10 +267,21 @@ def ask_stream(
                 answer_parts.append(chunk)
                 if on_chunk:
                     on_chunk(chunk)
+    except requests.exceptions.Timeout as exc:
+        # Keep whatever already streamed instead of discarding a long answer.
+        partial = "".join(answer_parts).strip()
+        if partial:
+            return partial
+        raise ProviderError(
+            "Модель не ответила за отведённое время (таймаут). "
+            "Попробуй ещё раз или выбери другую модель."
+        ) from exc
     finally:
         response.close()
 
     answer = "".join(answer_parts).strip()
     if not answer:
-        raise ProviderError("Модель вернула пустой ответ. Попробуй другую модель.")
+        raise ProviderError(
+            "Модель вернула пустой ответ. Попробуй другую модель или повтори запрос."
+        )
     return answer
