@@ -28,6 +28,11 @@
 #include "backends/imgui_impl_win32.h"
 #include "misc/cpp/imgui_stdlib.h"
 
+// Header intentionally hides this behind #if 0 — copy the declaration here.
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
+                                                             WPARAM wParam,
+                                                             LPARAM lParam);
+
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "user32.lib")
